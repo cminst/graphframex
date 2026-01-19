@@ -175,7 +175,7 @@ python3 code/main.py --dataset_name [dataset-name] --model_name [gnn-model] --ex
   - synthetic: ba_2motifs, ba_multishapes
   - real-world: mutag, bbbp, mnist, graphsst2, ieee24_mc, ieee39_mc, ieee118_mc, uk_mc
 - gnn-model: gcn, gat, gin, transformer
-- explainer-name: random, sa, ig, gradcam, occlusion, basic_gnnexplainer, gnnexplainer, subgraphx, pgmexplainer, pgexplainer, rcexplainer, gsat, graphcfe, gflowexplainer, diffexplainer
+- explainer-name: random, sa, ig, gradcam, occlusion, basic_gnnexplainer, gnnexplainer, subgraphx, pgmexplainer, pgexplainer, rcexplainer, gsat, graphcfe, gflowexplainer, diffexplainer, lacore
 
 ### Node Classification
 
@@ -183,7 +183,7 @@ python3 code/main.py --dataset_name [dataset-name] --model_name [gnn-model] --ex
   - synthetic: ba_house, ba_grid, tree_cycle, tree_grid, ba_bottle
   - real-world: cora, pubmed, citeseer, facebook, chameleon, squirrel, texas, wisconsin, cornell, actor
 - gnn-model: gcn, gat, gin, transformer
-- explainer-name: random, pagerank, distance, sa, ig, gradcam, occlusion, basic_gnnexplainer, gnnexplainer, subgraphx, pgmexplainer, pgexplainer
+- explainer-name: random, pagerank, distance, sa, ig, gradcam, occlusion, basic_gnnexplainer, gnnexplainer, subgraphx, pgmexplainer, pgexplainer, lacore
 
 Note that gradcam is only available for synthetic datasets and subgraphx only for GCN model.
 
@@ -197,8 +197,9 @@ To compare the methods, we adopt separately three strategies to cut off the mask
 
 3. Topk
 
-This can be changed by changing the `--mask_transformation` parameter. Choices are [`topk`, `sparsity`,`threshold`]. The default strategy is `topk`.
-You adjust the level of transformation with the `--transf_params` parameter. Here, you define the list of transformation values. Default list is `"5,10"`
+This can be changed by changing the `--mask_transformation` parameter. Choices are [`topk`, `sparsity`,`threshold`, `lacore`]. The default strategy is `topk`.
+You adjust the level of transformation with the `--transf_params` parameter. Here, you define the list of transformation values. Default list is `"5,10"`.
+For `lacore`, `--transf_params` is the epsilon value (e.g. `--mask_transformation lacore --transf_params 0.1`). Higher epsilon generally yields a larger cluster; lower epsilon yields a smaller cluster.
 
 ### Jupyter Notebook
 

@@ -656,7 +656,7 @@ class Explain(object):
     def _transform(self, masks, param):
         """Transform masks according to the given strategy (topk, threshold, sparsity) and level."""
         new_masks = []
-        if (param is None) | (self.mask_transformation == "None"):
+        if (param is None) | (self.mask_transformation in ["None", "lacore"]):
             return masks
         for i in range(len(self.explained_y)):
             mask = masks[i].copy()
@@ -824,8 +824,16 @@ def explain_main(dataset, model, device, args, unseen=False):
 
     if (edge_masks is None) or (not edge_masks):
         raise ValueError("Edge masks are None")
-    params_lst = eval(explainer.transf_params)
-    params_lst.insert(0, None)
+    try:
+        params_raw = eval(explainer.transf_params)
+    except Exception:
+        params_raw = explainer.transf_params
+    if isinstance(params_raw, (list, tuple)):
+        params_lst = list(params_raw)
+    else:
+        params_lst = [params_raw]
+    if explainer.mask_transformation != "lacore":
+        params_lst.insert(0, None)
     edge_masks_ori = edge_masks.copy()
     for i, param in enumerate(params_lst):
         params_transf = {explainer.mask_transformation: param}

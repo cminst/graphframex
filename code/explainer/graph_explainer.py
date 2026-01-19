@@ -45,6 +45,7 @@ from gendata import get_dataset, get_dataloader
 from explainer.gsat import GSAT, ExtractorMLP, gsat_get_config
 from explainer.explainer_utils.gsat import Writer, init_metric_dict, save_checkpoint, load_checkpoint
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from explainer.explainer_utils.lacore import generate_lacore_cluster
 
 
 
@@ -78,6 +79,42 @@ def node_attr_to_edge(edge_index, node_mask):
     edge_mask += node_mask[edge_index[0].cpu().numpy()]
     edge_mask += node_mask[edge_index[1].cpu().numpy()]
     return edge_mask
+
+
+def _edge_index_to_undirected_edges(edge_index):
+    edge_index_np = edge_index.cpu().numpy()
+    edges = set()
+    for u, v in edge_index_np.T:
+        if u == v:
+            continue
+        a, b = (u, v) if u < v else (v, u)
+        edges.add((int(a), int(b)))
+    return list(edges)
+
+
+def _cluster_nodes_to_edge_mask(edge_index, num_nodes, cluster_nodes):
+    if not cluster_nodes:
+        return np.zeros(edge_index.shape[1])
+    in_cluster = np.zeros(int(num_nodes), dtype=bool)
+    in_cluster[np.array(cluster_nodes, dtype=int)] = True
+    edge_index_np = edge_index.cpu().numpy()
+    mask = in_cluster[edge_index_np[0]] & in_cluster[edge_index_np[1]]
+    return mask.astype("float")
+
+
+def _parse_lacore_epsilon(kwargs, default_eps=0.1):
+    eps_raw = kwargs.get("transf_params", default_eps)
+    if isinstance(eps_raw, str):
+        try:
+            eps_raw = eval(eps_raw)
+        except Exception:
+            pass
+    if isinstance(eps_raw, (list, tuple)) and len(eps_raw) > 0:
+        eps_raw = eps_raw[0]
+    try:
+        return float(eps_raw)
+    except Exception:
+        return float(default_eps)
 
 
 #### Baselines ####
@@ -233,6 +270,18 @@ def explain_subgraphx_graph(model, data, target, device, **kwargs):
         data.edge_attr,
         max_nodes=kwargs["num_top_edges"],
         label=target,
+    )
+    return edge_mask.astype("float"), None
+
+
+def explain_lacore_graph(model, data, target, device, **kwargs):
+    epsilon = _parse_lacore_epsilon(kwargs)
+    edges = _edge_index_to_undirected_edges(data.edge_index)
+    cluster = generate_lacore_cluster(
+        edges, epsilon=epsilon, num_nodes=int(data.num_nodes)
+    )
+    edge_mask = _cluster_nodes_to_edge_mask(
+        data.edge_index, data.num_nodes, cluster["seed_nodes"]
     )
     return edge_mask.astype("float"), None
 

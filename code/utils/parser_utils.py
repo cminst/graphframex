@@ -267,10 +267,10 @@ def arg_parse():
         help="strategy for mask transformation",
         type=str,
         default="topk",
-    )  # ["topk", "sparsity", "threshold"]
+    )  # ["topk", "sparsity", "threshold", "lacore"]
     parser_explainer_params.add_argument(
         "--transf_params",
-        help="list of transformation degrees",
+        help="list of transformation degrees (or epsilon for lacore)",
         type=str,
         default="[10]",
     )
