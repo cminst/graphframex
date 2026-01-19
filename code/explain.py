@@ -780,6 +780,7 @@ def explain_main(dataset, model, device, args, unseen=False):
         # args.mask_save_dir="None"
         args.num_explained_y = len(dataset)
     mask_save_name = get_mask_dir_path(args, device, unseen)
+    mask_save_base = os.path.splitext(mask_save_name)[0]
 
     if (args.explained_target is None) | (unseen):
         list_test_idx = range(0, len(dataset._data.y))
@@ -800,14 +801,6 @@ def explain_main(dataset, model, device, args, unseen=False):
         save_name=mask_save_name,
     )
 
-    (
-        explained_y,
-        edge_masks,
-        node_feat_masks,
-        computation_time,
-    ) = explainer.compute_mask()
-    edge_masks, node_feat_masks = explainer.clean_mask(edge_masks, node_feat_masks)
-
     infos = {
         "seed": args.seed,
         "dataset": args.dataset_name,
@@ -818,12 +811,10 @@ def explain_main(dataset, model, device, args, unseen=False):
         "mask_nature": args.mask_nature,
         "explained_target": args.explained_target,
         "pred_type": args.pred_type,
-        "time": float(format(np.mean(computation_time), ".4f")),
+        "time": 0.0,
         "device": str(device),
     }
 
-    if (edge_masks is None) or (not edge_masks):
-        raise ValueError("Edge masks are None")
     try:
         params_raw = eval(explainer.transf_params)
     except Exception:
@@ -832,33 +823,81 @@ def explain_main(dataset, model, device, args, unseen=False):
         params_lst = list(params_raw)
     else:
         params_lst = [params_raw]
-    if explainer.mask_transformation != "lacore":
-        params_lst.insert(0, None)
-    edge_masks_ori = edge_masks.copy()
-    for i, param in enumerate(params_lst):
-        params_transf = {explainer.mask_transformation: param}
-        edge_masks = explainer._transform(edge_masks_ori, param)
-        # Compute mask properties
-        edge_masks_properties = get_mask_properties(edge_masks)
-        # Evaluate scores of the masks
+
+    if explainer.mask_transformation == "lacore":
+        for i, param in enumerate(params_lst):
+            explainer.transf_params = param
+            explainer.explainer_params["transf_params"] = param
+            if explainer.save_dir is not None:
+                safe_param = str(param).replace(" ", "").replace("/", "_")
+                explainer.save_name = f"{mask_save_base}_eps{safe_param}.pkl"
+            (
+                explained_y,
+                edge_masks,
+                node_feat_masks,
+                computation_time,
+            ) = explainer.compute_mask()
+            edge_masks, node_feat_masks = explainer.clean_mask(
+                edge_masks, node_feat_masks
+            )
+            if (edge_masks is None) or (not edge_masks):
+                raise ValueError("Edge masks are None")
+            infos["time"] = float(format(np.mean(computation_time), ".4f"))
+            params_transf = {explainer.mask_transformation: param}
+            edge_masks_properties = get_mask_properties(edge_masks)
+            (
+                top_accuracy_scores,
+                accuracy_scores,
+                fidelity_scores,
+            ) = explainer.eval(edge_masks, node_feat_masks)
+            eval_scores = {
+                **top_accuracy_scores,
+                **accuracy_scores,
+                **fidelity_scores,
+                **edge_masks_properties,
+            }
+            scores = pd.DataFrame.from_dict(eval_scores)
+            for column_name, values in {**infos, **params_transf}.items():
+                scores[column_name] = values
+            if i == 0:
+                results = scores
+            else:
+                results = pd.concat([results, scores], ignore_index=True)
+    else:
         (
-            top_accuracy_scores,
-            accuracy_scores,
-            fidelity_scores,
-        ) = explainer.eval(edge_masks, node_feat_masks)
-        eval_scores = {
-            **top_accuracy_scores,
-            **accuracy_scores,
-            **fidelity_scores,
-            **edge_masks_properties,
-        }
-        scores = pd.DataFrame.from_dict(eval_scores)
-        for column_name, values in {**infos, **params_transf}.items():
-            scores[column_name] = values
-        if i == 0:
-            results = scores
-        else:
-            results = pd.concat([results, scores], ignore_index=True)
+            explained_y,
+            edge_masks,
+            node_feat_masks,
+            computation_time,
+        ) = explainer.compute_mask()
+        edge_masks, node_feat_masks = explainer.clean_mask(edge_masks, node_feat_masks)
+        if (edge_masks is None) or (not edge_masks):
+            raise ValueError("Edge masks are None")
+        infos["time"] = float(format(np.mean(computation_time), ".4f"))
+        params_lst.insert(0, None)
+        edge_masks_ori = edge_masks.copy()
+        for i, param in enumerate(params_lst):
+            params_transf = {explainer.mask_transformation: param}
+            edge_masks = explainer._transform(edge_masks_ori, param)
+            edge_masks_properties = get_mask_properties(edge_masks)
+            (
+                top_accuracy_scores,
+                accuracy_scores,
+                fidelity_scores,
+            ) = explainer.eval(edge_masks, node_feat_masks)
+            eval_scores = {
+                **top_accuracy_scores,
+                **accuracy_scores,
+                **fidelity_scores,
+                **edge_masks_properties,
+            }
+            scores = pd.DataFrame.from_dict(eval_scores)
+            for column_name, values in {**infos, **params_transf}.items():
+                scores[column_name] = values
+            if i == 0:
+                results = scores
+            else:
+                results = pd.concat([results, scores], ignore_index=True)
     ### Save results ###
     save_path = os.path.join(
         args.result_save_dir, args.dataset_name, args.explainer_name

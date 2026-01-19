@@ -375,13 +375,11 @@ def explain_pgexplainer_node(model, data, node_idx, target, device, **kwargs):
     os.makedirs(subdir, exist_ok=True)
     pgexplainer_saving_path = os.path.join(subdir, f"pgexplainer_{dataset_name}.pth")
     if os.path.isfile(pgexplainer_saving_path):
-        print("Load saved PGExplainer model...")
         state_dict = torch.load(pgexplainer_saving_path)
         pgexplainer.load_state_dict(state_dict)
     else:
         data = sample_large_graph(data)
         pgexplainer.train_explanation_network(data)
-        print("Save PGExplainer model...")
         torch.save(pgexplainer.state_dict(), pgexplainer_saving_path)
         state_dict = torch.load(pgexplainer_saving_path)
         pgexplainer.load_state_dict(state_dict)

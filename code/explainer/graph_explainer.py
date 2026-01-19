@@ -322,7 +322,6 @@ def explain_pgexplainer_graph(model, data, target, device, **kwargs):
     os.makedirs(subdir, exist_ok=True)
     pgexplainer_saving_path = os.path.join(subdir, f"pgexplainer_{dataset_name}_{str(device)}_{seed}.pth")
     if os.path.isfile(pgexplainer_saving_path):
-        print("Load saved PGExplainer model...")
         state_dict = torch.load(pgexplainer_saving_path)
         pgexplainer.load_state_dict(state_dict)
     else:
@@ -330,7 +329,6 @@ def explain_pgexplainer_graph(model, data, target, device, **kwargs):
         t0 = time.time()
         pgexplainer.train_explanation_network(kwargs["dataset"][:200])
         train_time = time.time() - t0
-        print("Save PGExplainer model...")
         torch.save(pgexplainer.state_dict(), pgexplainer_saving_path)
         train_time_file = os.path.join(subdir, f"pgexplainer_train_time.json")
         entry = {"dataset": dataset_name, "train_time": train_time, "seed": seed, "device": str(device)}
