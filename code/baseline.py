@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import warnings
 import json
+from pathlib import Path
 from evaluate.fidelity import (
     fidelity_acc,
     fidelity_acc_inv,
@@ -38,10 +39,17 @@ from evaluate.accuracy import (
     get_scores,
 )
 from evaluate.mask_utils import mask_to_shape, clean, control_sparsity, get_mask_properties
+
+
+def remove_checkpoints(save_dir, save_name):
+    for suffix in ("_best.pth", "_latest.pth"):
+        ckpt_path = Path(save_dir) / f"{save_name}{suffix}"
+        if ckpt_path.is_file():
+            ckpt_path.unlink()
 from explainer.node_explainer import *
 from explainer.graph_explainer import *
 from pathlib import Path
-from torch_geometric.data import DataLoader
+from torch_geometric.loader import DataLoader
 
 
 class Baseline(object):
@@ -54,7 +62,7 @@ class Baseline(object):
     ):
         self.model = model
         self.dataset = dataset  # train_mask, eval_mask, test_mask
-        self.data = dataset.data
+        self.data = dataset._data
         self.dataset_name = params["dataset_name"]
         self.device = device
 
@@ -232,20 +240,24 @@ if __name__=='__main__':
         dataset_root=args.data_save_dir,
         **dataset_params,
     )
-    dataset.data.x = dataset.data.x.float()
-    dataset.data.y = dataset.data.y.squeeze().long()
+        dataset._data.x = dataset._data.x.float()
+        dataset._data.y = dataset._data.y.squeeze().long()
     args = get_data_args(dataset, args)
     dataset_params["num_classes"] = args.num_classes
     dataset_params["num_node_features"] =args.num_node_features
 
     print("Number of graphs: {}".format(len(dataset)))
     for k in range(args.num_classes):
-        print("Number of graphs labeled as {}: {}".format(k, (dataset.data.y == k).sum().item()))
+        print(
+            "Number of graphs labeled as {}: {}".format(
+                k, (dataset._data.y == k).sum().item()
+            )
+        )
     
     if len(dataset) > 1:
         dataset_params["max_num_nodes"] = max([d.num_nodes for d in dataset])
     else:
-        dataset_params["max_num_nodes"] = dataset.data.num_nodes
+        dataset_params["max_num_nodes"] = dataset._data.num_nodes
     args.max_num_nodes = dataset_params["max_num_nodes"]
     model_params["edge_dim"] = args.edge_dim
 
@@ -283,7 +295,10 @@ if __name__=='__main__':
             save_dir=os.path.join(args.model_save_dir, args.dataset_name),
             save_name=model_save_name,
         )
-    if Path(os.path.join(trainer.save_dir, f"{trainer.save_name}_best.pth")).is_file():
+    best_ckpt = Path(trainer.save_dir) / f"{trainer.save_name}_best.pth"
+    if args.retrain:
+        remove_checkpoints(trainer.save_dir, trainer.save_name)
+    if best_ckpt.is_file() and not args.retrain:
         trainer.load_model()
     else:
         trainer.train(

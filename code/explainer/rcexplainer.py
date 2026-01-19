@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch_geometric.utils import softmax
 from torch_scatter import scatter_max
 import os.path as osp
-from torch_geometric.data import DataLoader
+from torch_geometric.loader import DataLoader
 from explainer.explainer_utils.rcexplainer.reorganizer import *
 from explainer.explainer_utils.rcexplainer.rc_train import *
 import copy
@@ -132,4 +132,3 @@ def train_rcexplainer(rc_explainer, train_dataset, test_dataset, loader, batch_s
     rc_explainer, best_acc_auc, best_acc_curve, best_pre, best_rec = train_policy(rc_explainer, model, device,
                                                                                   train_loader, test_loader, optimizer, batch_size=batch_size, topK_ratio=topk_ratio)
     return rc_explainer
-

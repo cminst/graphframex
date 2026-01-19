@@ -317,7 +317,7 @@ if __name__ == "__main__":
     ):
         print("Data already generated")
         dataset = BAMultiShapesDataset(root=root_path_data, name="BAMultiShapes")
-        print(dataset.data)
+        print(dataset._data)
         for data in dataset:
             print(data)
             print(data.edge_index)

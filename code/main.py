@@ -19,6 +19,13 @@ from pathlib import Path
 from torch_geometric.utils import degree
 
 
+def remove_checkpoints(save_dir, save_name):
+    for suffix in ("_best.pth", "_latest.pth"):
+        ckpt_path = Path(save_dir) / f"{save_name}{suffix}"
+        if ckpt_path.is_file():
+            ckpt_path.unlink()
+
+
 def main(args, args_group):
     fix_random_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -30,12 +37,12 @@ def main(args, args_group):
         dataset_root=args.data_save_dir,
         **dataset_params,
     )
-    dataset.data.x = dataset.data.x.float()
-    dataset.data.y = dataset.data.y.squeeze().long()
+    dataset._data.x = dataset._data.x.float()
+    dataset._data.y = dataset._data.y.squeeze().long()
     args = get_data_args(dataset, args)
     model_params["edge_dim"] = args.edge_dim
 
-    data_y = dataset.data.y.cpu().numpy()
+    data_y = dataset._data.y.cpu().numpy()
     if args.num_classes == 2:
         y_cf_all = 1 - data_y
     else:
@@ -52,15 +59,15 @@ def main(args, args_group):
         "num_ef": args.edge_dim,
         "avg_num_nodes": np.mean([data.num_nodes for data in dataset])
         if eval(args.graph_classification)
-        else dataset.data.num_nodes,
+        else dataset._data.num_nodes,
         "avg_num_edges": np.mean([data.edge_index.shape[1] for data in dataset])
         if eval(args.graph_classification)
-        else dataset.data.num_edges,
+        else dataset._data.num_edges,
         "avg_degree": np.mean(
             [degree(data.edge_index[0]).mean().item() for data in dataset]
         )
         if eval(args.graph_classification)
-        else degree(dataset.data.edge_index[0]).mean().item(),
+        else degree(dataset._data.edge_index[0]).mean().item(),
         "num_classes": args.num_classes,
     }
     print(info)
@@ -72,17 +79,17 @@ def main(args, args_group):
         unseen_mask = np.zeros(n, dtype=bool)
         unseen_mask[list_index] = True
         unseen_dataset = dataset[unseen_mask]
-        unseen_dataset.data, unseen_dataset.slices = dataset.collate(
+        unseen_dataset._data, unseen_dataset.slices = dataset.collate(
             [data for data in unseen_dataset]
         )
         dataset = dataset[~unseen_mask]
-        dataset.data, dataset.slices = dataset.collate([data for data in dataset])
+        dataset._data, dataset.slices = dataset.collate([data for data in dataset])
         args.num_explained_y = int(len(dataset) * 0.1)
 
     if len(dataset) > 1:
         args.max_num_nodes = max([d.num_nodes for d in dataset])
     else:
-        args.max_num_nodes = dataset.data.num_nodes
+        args.max_num_nodes = dataset._data.num_nodes
 
     if eval(args.graph_classification):
         args.data_split_ratio = [args.train_ratio, args.val_ratio, args.test_ratio]
@@ -115,18 +122,116 @@ def main(args, args_group):
             save_dir=os.path.join(args.model_save_dir, args.dataset_name),
             save_name=model_save_name,
         )
-    if Path(os.path.join(trainer.save_dir, f"{trainer.save_name}_best.pth")).is_file():
+    best_ckpt = Path(trainer.save_dir) / f"{trainer.save_name}_best.pth"
+    if args.retrain:
+        remove_checkpoints(trainer.save_dir, trainer.save_name)
+    if best_ckpt.is_file() and not args.retrain:
         trainer.load_model()
     else:
         trainer.train(
             train_params=args_group["train_params"],
             optimizer_params=args_group["optimizer_params"],
         )
-    _, _, _, _, _ = trainer.test()
+    test_loss, test_acc, test_balanced_acc, test_f1_score, _ = trainer.test()
 
     explain_main(dataset, trainer.model, device, args, unseen=False)
     if eval(args.unseen) and eval(args.graph_classification):
         explain_main(unseen_dataset, trainer.model, device, args, unseen=True)
+
+    print_summary(
+        args,
+        device,
+        test_loss,
+        test_acc,
+        test_balanced_acc,
+        test_f1_score,
+    )
+
+
+def get_results_path(args, device, unseen=False):
+    unseen_str = "_unseen" if unseen else ""
+    return os.path.join(
+        args.result_save_dir,
+        args.dataset_name,
+        args.explainer_name,
+        "results{}_{}_{}_{}_{}_{}_{}_target{}_{}_{}_{}.csv".format(
+            unseen_str,
+            args.dataset_name,
+            args.model_name,
+            args.explainer_name,
+            args.focus,
+            args.mask_nature,
+            args.num_explained_y,
+            args.explained_target,
+            args.pred_type,
+            str(device),
+            args.seed,
+        ),
+    )
+
+
+def print_summary(
+    args,
+    device,
+    test_loss,
+    test_acc,
+    test_balanced_acc,
+    test_f1_score,
+):
+    gnn_summary = pd.DataFrame(
+        [
+            {
+                "test_loss": test_loss,
+                "test_acc": test_acc,
+                "test_bal_acc": test_balanced_acc,
+                "test_f1": test_f1_score,
+            }
+        ]
+    )
+    print("\nGNN summary")
+    print(gnn_summary.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+
+    results_path = get_results_path(args, device, unseen=False)
+    if not os.path.isfile(results_path):
+        return
+
+    df = pd.read_csv(results_path)
+    param_col = args.mask_transformation
+    if param_col not in df.columns:
+        return
+
+    df[param_col] = df[param_col].where(pd.notna(df[param_col]), "raw")
+    grouped = df.groupby(param_col, dropna=False).mean(numeric_only=True)
+
+    fidelity_prob_col = (
+        "fidelity_gnn_prob+" if "fidelity_gnn_prob+" in grouped.columns else None
+    )
+    if fidelity_prob_col is None and "fidelity_prob+" in grouped.columns:
+        fidelity_prob_col = "fidelity_prob+"
+    fidelity_acc_col = (
+        "fidelity_gnn_acc+" if "fidelity_gnn_acc+" in grouped.columns else None
+    )
+    if fidelity_acc_col is None and "fidelity_acc+" in grouped.columns:
+        fidelity_acc_col = "fidelity_acc+"
+
+    display_cols = [
+        col
+        for col in [
+            fidelity_prob_col,
+            fidelity_acc_col,
+            "mask_sparsity",
+            "mask_density",
+            "mask_size",
+            "mask_total",
+        ]
+        if col in grouped.columns and col is not None
+    ]
+    if not display_cols:
+        return
+
+    expl_summary = grouped[display_cols].reset_index()
+    print("\nExplainer summary (mean over explained graphs)")
+    print(expl_summary.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
 
 
 if __name__ == "__main__":

@@ -100,7 +100,7 @@ class TrainModel(object):
             eval_balanced_acc = np.mean(balanced_accs)
             eval_f1_score = np.mean(f1_scores)
         else:
-            data = self.dataset.data.to(self.device)
+            data = self.dataset._data.to(self.device)
             eval_loss, preds = self._eval_batch(data, data.y, mask=data.val_mask)
             preds, data.y = preds.cpu(), data.y.cpu()
             eval_acc = (preds == data.y).float().mean().item()
@@ -133,7 +133,7 @@ class TrainModel(object):
             test_balanced_acc = np.mean(balanced_accs)
             test_f1_score = np.mean(f1_scores)
         else:
-            data = self.dataset.data.to(self.device)
+            data = self.dataset._data.to(self.device)
             test_loss, preds = self._eval_batch(data, data.y, mask=data.test_mask)
             preds, y = preds.cpu(), data.y.cpu()
             test_acc = (preds == data.y).float().mean().item()
@@ -185,7 +185,7 @@ class TrainModel(object):
                 train_loss = torch.FloatTensor(losses).mean().item()
 
             else:
-                data = self.dataset.data.to(self.device)
+                data = self.dataset._data.to(self.device)
                 train_loss = self._train_batch(data, data.y)
 
             with torch.no_grad():
@@ -236,6 +236,14 @@ class TrainModel(object):
         with open(os.path.join(self.save_dir, f"{self.save_name}_scores.json"), "w") as f:
             json.dump(scores, f)
 
+
+def remove_checkpoints(save_dir, save_name):
+    for suffix in ("_best.pth", "_latest.pth"):
+        ckpt_path = Path(save_dir) / f"{save_name}{suffix}"
+        if ckpt_path.is_file():
+            ckpt_path.unlink()
+
+
 def train_gnn(args, args_group):
     fix_random_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -247,15 +255,15 @@ def train_gnn(args, args_group):
         dataset_root=args.data_save_dir,
         **dataset_params,
     )
-    dataset.data.x = dataset.data.x.float()
-    dataset.data.y = dataset.data.y.squeeze().long()
+    dataset._data.x = dataset._data.x.float()
+    dataset._data.y = dataset._data.y.squeeze().long()
     args = get_data_args(dataset, args)
     model_params["edge_dim"] = args.edge_dim
     
     if len(dataset) > 1:
         dataset_params["max_num_nodes"] = max([d.num_nodes for d in dataset])
     else:
-        dataset_params["max_num_nodes"] = dataset.data.num_nodes
+        dataset_params["max_num_nodes"] = dataset._data.num_nodes
     args.max_num_nodes = dataset_params["max_num_nodes"]
 
     
@@ -293,7 +301,10 @@ def train_gnn(args, args_group):
             save_dir=os.path.join(args.model_save_dir, args.dataset_name),
             save_name=model_save_name,
         )
-    if Path(os.path.join(trainer.save_dir, f"{trainer.save_name}_best.pth")).is_file():
+    best_ckpt = Path(trainer.save_dir) / f"{trainer.save_name}_best.pth"
+    if args.retrain:
+        remove_checkpoints(trainer.save_dir, trainer.save_name)
+    if best_ckpt.is_file() and not args.retrain:
         trainer.load_model()
     else:
         trainer.train(

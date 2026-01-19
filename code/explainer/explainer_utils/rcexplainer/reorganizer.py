@@ -1,7 +1,7 @@
 import torch
 import copy
 from tqdm import tqdm
-from torch_geometric.data import DataLoader
+from torch_geometric.loader import DataLoader
 
 
 def filter_correct_data(model, dataset, loader, flag='Training', batch_size=1):
@@ -32,7 +32,7 @@ def filter_correct_data_batch(model, dataset, loader, flag='training', batch_siz
     graph_mask = torch.BoolTensor(graph_mask)
 
     shuffle_flag = False
-    if flag is 'training':
+    if flag == 'training':
         shuffle_flag = True
 
     loader = DataLoader(dataset[graph_mask], batch_size=batch_size, shuffle=shuffle_flag)

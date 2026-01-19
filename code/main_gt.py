@@ -19,6 +19,13 @@ from torch_geometric.utils import degree
 from dataset.syn_utils.gengroundtruth import get_ground_truth_syn
 
 
+def remove_checkpoints(save_dir, save_name):
+    for suffix in ("_best.pth", "_latest.pth"):
+        ckpt_path = Path(save_dir) / f"{save_name}{suffix}"
+        if ckpt_path.is_file():
+            ckpt_path.unlink()
+
+
 def explain_groundtruth(dataset, model, device, args):
     try:
         args.groundtruth == "True"
@@ -26,9 +33,9 @@ def explain_groundtruth(dataset, model, device, args):
         print("Focus should be groundtruth should be True")
     args.dataset = dataset
     if args.explained_target is None:
-        list_test_idx = range(0, len(dataset.data.y))
+        list_test_idx = range(0, len(dataset._data.y))
     else:
-        list_test_idx = np.where(dataset.data.y.cpu().numpy() == args.explained_target)[
+        list_test_idx = np.where(dataset._data.y.cpu().numpy() == args.explained_target)[
             0
         ]
     print("Number of explanable entities: ", len(list_test_idx))
@@ -112,12 +119,12 @@ def main_gt(args, args_group):
         dataset_root=args.data_save_dir,
         **dataset_params,
     )
-    dataset.data.x = dataset.data.x.float()
-    dataset.data.y = dataset.data.y.squeeze().long()
+    dataset._data.x = dataset._data.x.float()
+    dataset._data.y = dataset._data.y.squeeze().long()
     args = get_data_args(dataset, args)
     model_params["edge_dim"] = args.edge_dim
 
-    data_y = dataset.data.y.cpu().numpy()
+    data_y = dataset._data.y.cpu().numpy()
     if args.num_classes == 2:
         y_cf_all = 1 - data_y
     else:
@@ -144,7 +151,7 @@ def main_gt(args, args_group):
     if len(dataset) > 1:
         args.max_num_nodes = max([d.num_nodes for d in dataset])
     else:
-        args.max_num_nodes = dataset.data.num_nodes
+        args.max_num_nodes = dataset._data.num_nodes
 
     if eval(args.graph_classification):
         args.data_split_ratio = [args.train_ratio, args.val_ratio, args.test_ratio]
@@ -177,7 +184,10 @@ def main_gt(args, args_group):
             save_dir=os.path.join(args.model_save_dir, args.dataset_name),
             save_name=model_save_name,
         )
-    if Path(os.path.join(trainer.save_dir, f"{trainer.save_name}_best.pth")).is_file():
+    best_ckpt = Path(trainer.save_dir) / f"{trainer.save_name}_best.pth"
+    if args.retrain:
+        remove_checkpoints(trainer.save_dir, trainer.save_name)
+    if best_ckpt.is_file() and not args.retrain:
         trainer.load_model()
     else:
         trainer.train(

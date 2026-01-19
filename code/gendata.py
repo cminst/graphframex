@@ -1,7 +1,7 @@
 import torch
 from torch import default_generator, randperm
 from torch.utils.data import random_split, Subset
-from torch_geometric.data import DataLoader
+from torch_geometric.loader import DataLoader
 from dataset import (
     MoleculeDataset,
     SynGraphDataset,
@@ -191,4 +191,4 @@ if __name__ == "__main__":
     dataset = get_dataset(args.data_save_dir, "ba_house", **data_params)
     # dataset = get_dataset(args.data_save_dir, "cora")
     print(dataset)
-    print(dataset.data)
+    print(dataset._data)

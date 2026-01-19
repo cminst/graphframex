@@ -147,6 +147,13 @@ def get_size(masks):
     return size / len(masks)
 
 
+def get_avg_len(masks):
+    total = 0
+    for i in range(len(masks)):
+        total += len(masks[i])
+    return total / len(masks)
+
+
 def get_entropy(masks):
     ent = 0
     k = 0
@@ -181,8 +188,12 @@ def get_avg_max(masks):
 
 
 def get_mask_properties(masks):
+    avg_len = get_avg_len(masks)
+    avg_size = get_size(masks)
     mask_info = {
-        "mask_size": get_size(masks),
+        "mask_size": avg_size,
+        "mask_total": avg_len,
+        "mask_density": (avg_size / avg_len) if avg_len else 0,
         "mask_sparsity": get_sparsity(masks),
         "mask_entropy": get_entropy(masks),
         "max_avg": get_avg_max(masks),

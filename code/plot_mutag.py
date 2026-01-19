@@ -41,8 +41,8 @@ dataset = get_dataset(
     dataset_root=data_save_dir,
     **params,
 )
-dataset.data.x = dataset.data.x.float()
-dataset.data.y = dataset.data.y.squeeze().long()
+dataset._data.x = dataset._data.x.float()
+dataset._data.y = dataset._data.y.squeeze().long()
 
 #%%
 save_dir = os.path.join(mask_save_dir, params["dataset_name"], params["explainer_name"])

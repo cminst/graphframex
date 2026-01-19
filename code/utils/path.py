@@ -2,9 +2,9 @@
 #
 import os
 
-CKPT_ROOT = "/cluster/work/zhang/kamara/graphframex/"
-DATA_DIR = CKPT_ROOT + "data/"
-MODEL_DIR = CKPT_ROOT + "model/"
-LOG_DIR = CKPT_ROOT + "logs/"
-RESULT_DIR = CKPT_ROOT + "results/"
-MASK_DIR = CKPT_ROOT + "mask/"
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+DATA_DIR = os.path.join(REPO_ROOT, "data")
+MODEL_DIR = os.path.join(REPO_ROOT, "model")
+LOG_DIR = os.path.join(REPO_ROOT, "logs")
+RESULT_DIR = os.path.join(REPO_ROOT, "results")
+MASK_DIR = os.path.join(REPO_ROOT, "mask")
