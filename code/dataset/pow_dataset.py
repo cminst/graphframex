@@ -238,7 +238,6 @@ class UK(InMemoryDataset):
 class IEEE24(InMemoryDataset):
     # Base folder to download the files
     names = {"ieee24": ["ieee24", "ieee24", None, None]}
-    print('hi')
     raw_path = "ieee24" # "ieee24+expmask/"
 
     def __init__(
@@ -903,4 +902,3 @@ class IEEE118(InMemoryDataset):
 
         data_list = padded_datalist(data_list, adj_list, max_num_nodes)
         torch.save(self.collate(data_list), self.processed_paths[0])
-

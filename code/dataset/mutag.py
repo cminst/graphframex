@@ -6,7 +6,8 @@ import numpy as np
 import os.path as osp
 import pickle as pkl
 from pathlib import Path
-from torch_geometric.data import InMemoryDataset, Data
+from torch_geometric.data import InMemoryDataset, Data, download_url
+from dataset.mol_dataset import extract_zip
 from utils.gen_utils import padded_datalist, from_edge_index_to_adj
 
 
@@ -14,7 +15,7 @@ class Mutag(InMemoryDataset):
     def __init__(self, root, name):
         self.name = name.lower()
         super().__init__(root=root)
-        self.data, self.slices = torch.load(self.processed_paths[0])
+        self.data, self.slices = torch.load(self.processed_paths[0], weights_only=False)
 
     @property
     def raw_dir(self):
@@ -34,8 +35,14 @@ class Mutag(InMemoryDataset):
     def processed_file_names(self):
         return ['data.pt']
 
-    #def download(self):
-        #raise NotImplementedError
+    def download(self):
+        urls = [
+            "https://huggingface.co/datasets/cminst/MUTAG/resolve/main/Mutagenicity.pkl.zip",
+            "https://huggingface.co/datasets/cminst/MUTAG/resolve/main/Mutagenicity.zip",
+        ]
+        for url in urls:
+            path = download_url(url, self.raw_dir)
+            extract_zip(path, self.raw_dir)
 
     def process(self):
         with open(self.raw_dir + '/Mutagenicity.pkl', 'rb') as fin:
