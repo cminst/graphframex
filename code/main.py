@@ -203,26 +203,56 @@ def print_summary(
     df[param_col] = df[param_col].where(pd.notna(df[param_col]), "raw")
     grouped = df.groupby(param_col, dropna=False).mean(numeric_only=True)
 
-    fidelity_prob_col = (
-        "fidelity_gnn_prob+" if "fidelity_gnn_prob+" in grouped.columns else None
-    )
-    if fidelity_prob_col is None and "fidelity_prob+" in grouped.columns:
+    prefer_node = getattr(args, "paper_eval", False)
+    fidelity_prob_col = None
+    if prefer_node and "fidelity_node_gnn_prob+" in grouped.columns:
+        fidelity_prob_col = "fidelity_node_gnn_prob+"
+    elif "fidelity_gnn_prob+" in grouped.columns:
+        fidelity_prob_col = "fidelity_gnn_prob+"
+    elif "fidelity_prob+" in grouped.columns:
         fidelity_prob_col = "fidelity_prob+"
-    fidelity_acc_col = (
-        "fidelity_gnn_acc+" if "fidelity_gnn_acc+" in grouped.columns else None
-    )
-    if fidelity_acc_col is None and "fidelity_acc+" in grouped.columns:
+
+    fidelity_acc_col = None
+    if prefer_node and "fidelity_node_gnn_acc+" in grouped.columns:
+        fidelity_acc_col = "fidelity_node_gnn_acc+"
+    elif "fidelity_gnn_acc+" in grouped.columns:
+        fidelity_acc_col = "fidelity_gnn_acc+"
+    elif "fidelity_acc+" in grouped.columns:
         fidelity_acc_col = "fidelity_acc+"
+
+    sparsity_col = None
+    if prefer_node and "node_mask_sparsity" in grouped.columns:
+        sparsity_col = "node_mask_sparsity"
+    elif "mask_sparsity" in grouped.columns:
+        sparsity_col = "mask_sparsity"
+
+    density_col = None
+    if prefer_node and "node_mask_density" in grouped.columns:
+        density_col = "node_mask_density"
+    elif "mask_density" in grouped.columns:
+        density_col = "mask_density"
+
+    size_col = None
+    if prefer_node and "node_mask_size" in grouped.columns:
+        size_col = "node_mask_size"
+    elif "mask_size" in grouped.columns:
+        size_col = "mask_size"
+
+    total_col = None
+    if prefer_node and "node_mask_total" in grouped.columns:
+        total_col = "node_mask_total"
+    elif "mask_total" in grouped.columns:
+        total_col = "mask_total"
 
     display_cols = [
         col
         for col in [
             fidelity_prob_col,
             fidelity_acc_col,
-            "mask_sparsity",
-            "mask_density",
-            "mask_size",
-            "mask_total",
+            sparsity_col,
+            density_col,
+            size_col,
+            total_col,
         ]
         if col in grouped.columns and col is not None
     ]

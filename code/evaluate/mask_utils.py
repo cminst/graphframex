@@ -201,6 +201,18 @@ def get_mask_properties(masks):
     return mask_info
 
 
+def get_node_mask_properties(node_masks):
+    avg_len = get_avg_len(node_masks)
+    avg_size = get_size(node_masks)
+    mask_info = {
+        "node_mask_size": avg_size,
+        "node_mask_total": avg_len,
+        "node_mask_density": (avg_size / avg_len) if avg_len else 0,
+        "node_mask_sparsity": get_sparsity(node_masks),
+    }
+    return mask_info
+
+
 # def get_explanatory_subgraph__properties():
 
 # Edge_masks are normalized; we then select only the edges for which the mask value > threshold

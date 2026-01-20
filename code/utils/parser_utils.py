@@ -292,6 +292,12 @@ def arg_parse():
         type=int,
         default=0,
     )
+    parser_explainer_params.add_argument(
+        "--paper_eval",
+        help="use node-occlusion fidelity/sparsity to match SubgraphX paper",
+        action="store_true",
+        default=False,
+    )
 
     # hyperparameters for GNNExplainer
     parser_explainer_params.add_argument(

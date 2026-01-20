@@ -248,6 +248,7 @@ def explain_pgmexplainer_graph(model, data, target, device, **kwargs):
 
 
 def explain_subgraphx_graph(model, data, target, device, **kwargs):
+    use_high2low = kwargs.get("dataset_name") == "ba_shape"
     subgraphx = SubgraphX(
         model,
         kwargs["num_classes"],
@@ -256,12 +257,12 @@ def explain_subgraphx_graph(model, data, target, device, **kwargs):
         explain_graph=True,
         rollout=20,
         min_atoms=4,
-        expand_atoms=14,
-        high2low=True,
-        sample_num=50,
-        reward_method="mc_shapley",
+        expand_atoms=12,
+        high2low=use_high2low,
+        sample_num=100,
+        reward_method="mc_l_shapley",
         subgraph_building_method="zero_filling",
-        local_radius=4,
+        local_radius=kwargs["num_layers"],
     )
     edge_mask = subgraphx.explain(
         data.x,

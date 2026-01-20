@@ -29,6 +29,7 @@ from evaluate.mask_utils import (
     clean,
     control_sparsity,
     get_mask_properties,
+    get_node_mask_properties,
 )
 from explainer.node_explainer import *
 from explainer.graph_explainer import *
@@ -74,6 +75,7 @@ class Explain(object):
         self.transf_params = explainer_params["transf_params"]
         self.directed = explainer_params["directed"]
         self.groundtruth = eval(explainer_params["groundtruth"])
+        self.paper_eval = explainer_params.get("paper_eval", False)
         if self.groundtruth:
             self.num_top_edges = explainer_params["num_top_edges"]
 
@@ -149,7 +151,10 @@ class Explain(object):
                         )
                         pred_explanation[mask > 0] = 1
                         top_precision = sklearn.metrics.precision_score(
-                            true_explanation, pred_explanation, pos_label=1
+                            true_explanation,
+                            pred_explanation,
+                            pos_label=1,
+                            zero_division=0,
                         )
                         top_recall = sklearn.metrics.recall_score(
                             true_explanation, pred_explanation, pos_label=1
@@ -205,7 +210,10 @@ class Explain(object):
                         )
                         pred_explanation[mask > 0] = 1
                         top_precision = sklearn.metrics.precision_score(
-                            true_explanation, pred_explanation, pos_label=1
+                            true_explanation,
+                            pred_explanation,
+                            pos_label=1,
+                            zero_division=0,
                         )
                         top_recall = sklearn.metrics.recall_score(
                             true_explanation, pred_explanation, pos_label=1
@@ -279,7 +287,10 @@ class Explain(object):
                     pred_explanation = np.zeros(len(edge_mask))
                     pred_explanation[edge_mask > 0] = 1
                     precision = sklearn.metrics.precision_score(
-                        true_explanation, pred_explanation, pos_label=1
+                        true_explanation,
+                        pred_explanation,
+                        pos_label=1,
+                        zero_division=0,
                     )
                     recall = sklearn.metrics.recall_score(
                         true_explanation, pred_explanation, pos_label=1
@@ -329,7 +340,10 @@ class Explain(object):
                         pred_explanation = np.zeros(len(edge_mask))
                         pred_explanation[edge_mask > 0] = 1
                         precision = sklearn.metrics.precision_score(
-                            true_explanation, pred_explanation, pos_label=1
+                            true_explanation,
+                            pred_explanation,
+                            pos_label=1,
+                            zero_division=0,
                         )
                         recall = sklearn.metrics.recall_score(
                             true_explanation, pred_explanation, pos_label=1
@@ -377,6 +391,28 @@ class Explain(object):
         fidelity_scores["num_explained_y_fid"] = self.num_explained_y
         return fidelity_scores
 
+    def _eval_fid_node(self, related_preds):
+        if self.focus == "phenomenon":
+            fidelity_scores = {
+                "fidelity_node_acc+": fidelity_acc(related_preds),
+                "fidelity_node_acc-": fidelity_acc_inv(related_preds),
+                "fidelity_node_prob+": fidelity_prob(related_preds),
+                "fidelity_node_prob-": fidelity_prob_inv(related_preds),
+            }
+        elif self.focus == "model":
+            fidelity_scores = {
+                "fidelity_node_gnn_acc+": fidelity_gnn_acc(related_preds),
+                "fidelity_node_gnn_acc-": fidelity_gnn_acc_inv(related_preds),
+                "fidelity_node_gnn_prob+": fidelity_gnn_prob(related_preds),
+                "fidelity_node_gnn_prob-": fidelity_gnn_prob_inv(related_preds),
+            }
+        else:
+            raise ValueError("Unknown focus: {}".format(self.focus))
+
+        fidelity_scores = pd.DataFrame.from_dict(fidelity_scores)
+        fidelity_scores["num_explained_y_fid"] = self.num_explained_y
+        return fidelity_scores
+
     def eval(self, edge_masks, node_feat_masks):
         related_preds = eval("self.related_pred" + self.task)(
             edge_masks, node_feat_masks
@@ -387,11 +423,42 @@ class Explain(object):
         else:
             accuracy_scores, top_accuracy_scores = {}, {}
         fidelity_scores = self._eval_fid(related_preds)
-        return (
-            top_accuracy_scores,
-            accuracy_scores,
-            fidelity_scores,
+        return top_accuracy_scores, accuracy_scores, fidelity_scores
+
+    def eval_node(self, edge_masks, node_feat_masks):
+        related_preds = eval("self.related_pred_node_mask" + self.task)(
+            edge_masks, node_feat_masks
         )
+        fidelity_scores = self._eval_fid_node(related_preds)
+        return fidelity_scores
+
+    def _edge_mask_to_node_mask(self, edge_index, edge_mask, num_nodes):
+        if edge_mask is None:
+            return None
+        edge_mask = np.asarray(edge_mask)
+        if edge_mask.size == 0:
+            return np.zeros(num_nodes, dtype=float)
+        important = edge_mask > 0
+        if not np.any(important):
+            return np.zeros(num_nodes, dtype=float)
+        edge_index = edge_index.cpu().numpy()
+        node_mask = np.zeros(num_nodes, dtype=float)
+        node_mask[edge_index[0, important]] = 1.0
+        node_mask[edge_index[1, important]] = 1.0
+        return node_mask
+
+    def _build_node_masks(self, edge_masks):
+        node_masks = []
+        for i in range(len(edge_masks)):
+            if self.graph_classification:
+                data = self.dataset[self.explained_y[i]]
+            else:
+                data = self.data
+            node_mask = self._edge_mask_to_node_mask(
+                data.edge_index, edge_masks[i], int(data.num_nodes)
+            )
+            node_masks.append(node_mask)
+        return node_masks
 
     def related_pred_graph(self, edge_masks, node_feat_masks):
         related_preds = []
@@ -460,6 +527,59 @@ class Explain(object):
             pred_label = np.argmax(ori_prob_idx)
 
             # assert true_label == pred_label, "The label predicted by the GCN does not match the true label."\
+            related_preds.append(
+                {
+                    "explained_y_idx": explained_y_idx,
+                    "masked": masked_prob_idx,
+                    "maskout": maskout_prob_idx,
+                    "origin": ori_prob_idx,
+                    "true_label": true_label,
+                    "pred_label": pred_label,
+                }
+            )
+
+        related_preds = list_to_dict(related_preds)
+        return related_preds
+
+    def related_pred_node_mask_graph(self, edge_masks, node_feat_masks):
+        related_preds = []
+        node_masks = self._build_node_masks(edge_masks)
+        for i in range(len(self.explained_y)):
+            explained_y_idx = self.explained_y[i]
+            data = self.dataset[explained_y_idx]
+            data = data.to(self.device)
+            data.batch = torch.zeros(data.x.shape[0], dtype=int, device=data.x.device)
+            ori_prob_idx = self.model.get_prob(data).cpu().detach().numpy()[0]
+
+            if node_feat_masks[0] is not None:
+                if node_feat_masks[i].ndim == 0:
+                    node_feat_mask = node_feat_masks[i].reshape(-1)
+                else:
+                    node_feat_mask = node_feat_masks[i]
+                node_feat_mask = torch.Tensor(node_feat_mask).to(self.device)
+                base_masked = data.x * node_feat_mask
+                base_maskout = data.x * (1 - node_feat_mask)
+            else:
+                base_masked, base_maskout = data.x, data.x
+
+            node_mask = torch.Tensor(node_masks[i]).to(self.device)
+            x_masked = base_masked.clone()
+            x_maskout = base_maskout.clone()
+            x_masked[node_mask == 0] = 0
+            x_maskout[node_mask == 1] = 0
+
+            masked_data, maskout_data = data.clone(), data.clone()
+            masked_data.x = x_masked
+            maskout_data.x = x_maskout
+
+            masked_prob_idx = self.model.get_prob(masked_data).cpu().detach().numpy()[0]
+            maskout_prob_idx = (
+                self.model.get_prob(maskout_data).cpu().detach().numpy()[0]
+            )
+
+            true_label = data.y.cpu().item()
+            pred_label = np.argmax(ori_prob_idx)
+
             related_preds.append(
                 {
                     "explained_y_idx": explained_y_idx,
@@ -543,6 +663,57 @@ class Explain(object):
             pred_label = np.argmax(ori_prob_idx)
 
             # assert true_label == pred_label, "The label predicted by the GCN does not match the true label."\
+            related_preds.append(
+                {
+                    "explained_y_idx": explained_y_idx,
+                    "masked": masked_prob_idx,
+                    "maskout": maskout_prob_idx,
+                    "origin": ori_prob_idx,
+                    "true_label": true_label,
+                    "pred_label": pred_label,
+                }
+            )
+
+        related_preds = list_to_dict(related_preds)
+        return related_preds
+
+    def related_pred_node_mask_node(self, edge_masks, node_feat_masks):
+        related_preds = []
+        node_masks = self._build_node_masks(edge_masks)
+        data = self.data
+        ori_probs = self.model.get_prob(data=self.data)
+        for i in range(len(self.explained_y)):
+            if node_feat_masks[0] is not None:
+                if node_feat_masks[i].ndim == 0:
+                    node_feat_mask = node_feat_masks[i].reshape(-1)
+                else:
+                    node_feat_mask = node_feat_masks[i]
+                node_feat_mask = torch.Tensor(node_feat_mask).to(self.device)
+                base_masked = self.data.x * node_feat_mask
+                base_maskout = self.data.x * (1 - node_feat_mask)
+            else:
+                base_masked, base_maskout = self.data.x, self.data.x
+
+            node_mask = torch.Tensor(node_masks[i]).to(self.device)
+            x_masked = base_masked.clone()
+            x_maskout = base_maskout.clone()
+            x_masked[node_mask == 0] = 0
+            x_maskout[node_mask == 1] = 0
+
+            masked_data, maskout_data = data.clone(), data.clone()
+            masked_data.x = x_masked
+            maskout_data.x = x_maskout
+
+            masked_probs = self.model.get_prob(masked_data).cpu().detach().numpy()[0]
+            maskout_probs = self.model.get_prob(maskout_data).cpu().detach().numpy()[0]
+
+            explained_y_idx = self.explained_y[i]
+            ori_prob_idx = ori_probs[explained_y_idx].cpu().detach().numpy()
+            masked_prob_idx = masked_probs[explained_y_idx].cpu().detach().numpy()
+            maskout_prob_idx = maskout_probs[explained_y_idx].cpu().detach().numpy()
+            true_label = self.data.y[explained_y_idx].cpu().item()
+            pred_label = np.argmax(ori_prob_idx)
+
             related_preds.append(
                 {
                     "explained_y_idx": explained_y_idx,
@@ -850,11 +1021,23 @@ def explain_main(dataset, model, device, args, unseen=False):
                 accuracy_scores,
                 fidelity_scores,
             ) = explainer.eval(edge_masks, node_feat_masks)
+            node_fidelity_scores = (
+                explainer.eval_node(edge_masks, node_feat_masks)
+                if explainer.paper_eval
+                else {}
+            )
+            node_masks_properties = (
+                get_node_mask_properties(explainer._build_node_masks(edge_masks))
+                if explainer.paper_eval
+                else {}
+            )
             eval_scores = {
                 **top_accuracy_scores,
                 **accuracy_scores,
                 **fidelity_scores,
                 **edge_masks_properties,
+                **node_fidelity_scores,
+                **node_masks_properties,
             }
             scores = pd.DataFrame.from_dict(eval_scores)
             for column_name, values in {**infos, **params_transf}.items():
@@ -885,11 +1068,23 @@ def explain_main(dataset, model, device, args, unseen=False):
                 accuracy_scores,
                 fidelity_scores,
             ) = explainer.eval(edge_masks, node_feat_masks)
+            node_fidelity_scores = (
+                explainer.eval_node(edge_masks, node_feat_masks)
+                if explainer.paper_eval
+                else {}
+            )
+            node_masks_properties = (
+                get_node_mask_properties(explainer._build_node_masks(edge_masks))
+                if explainer.paper_eval
+                else {}
+            )
             eval_scores = {
                 **top_accuracy_scores,
                 **accuracy_scores,
                 **fidelity_scores,
                 **edge_masks_properties,
+                **node_fidelity_scores,
+                **node_masks_properties,
             }
             scores = pd.DataFrame.from_dict(eval_scores)
             for column_name, values in {**infos, **params_transf}.items():

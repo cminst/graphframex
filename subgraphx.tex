@@ -1,0 +1,584 @@
+%%%%%%%% ICML 2021 EXAMPLE LATEX SUBMISSION FILE %%%%%%%%%%%%%%%%%
+
+\documentclass{article}
+
+% Recommended, but optional, packages for figures and better typesetting:
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{amsfonts}
+\usepackage{enumitem}
+\usepackage{booktabs} % for professional tables
+
+% hyperref makes hyperlinks in the resulting PDF.
+% If your build breaks (sometimes temporarily if a hyperlink spans a page)
+% please comment out the following usepackage line and replace
+% \usepackage{icml2021} with \usepackage[nohyperref]{icml2021} above.
+\usepackage{hyperref}
+
+% Attempt to make hyperref and algorithmic work together better:
+\newcommand{\theHalgorithm}{\arabic{algorithm}}
+
+% Use the following line for the initial blind version submitted for review:
+% \usepackage{icml2021}
+\usepackage{amsmath}
+%\usepackage{amssymb}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+% If accepted, instead use the following line for the camera-ready submission:
+\usepackage[accepted]{icml2021}
+
+% The \icmltitle you define below is probably too long as a header.
+% Therefore, a short form for the running title is supplied here:
+\icmltitlerunning{On Explainability of Graph Neural Networks via Subgraph Explorations}
+
+\begin{document}
+
+\twocolumn[
+\icmltitle{On Explainability of Graph Neural Networks via Subgraph Explorations}
+
+% It is OKAY to include author information, even for blind
+% submissions: the style file will automatically remove it for you
+% unless you've provided the [accepted] option to the icml2021
+% package.
+
+% List of affiliations: The first argument should be a (short)
+% identifier you will use later to specify author affiliations
+% Academic affiliations should list Department, University, City, Region, Country
+% Industry affiliations should list Company, City, Region, Country
+
+% You can specify symbols, otherwise they are numbered in order.
+% Ideally, you should not use this facility. Affiliations will be numbered
+% in order of appearance and this is the preferred way.
+\icmlsetsymbol{equal}{*}
+
+\begin{icmlauthorlist}
+\icmlauthor{Hao Yuan}{tamu}
+\icmlauthor{Haiyang Yu}{tamu}
+\icmlauthor{Jie Wang}{ustc}
+\icmlauthor{Kang Li}{sichuan}
+\icmlauthor{Shuiwang Ji}{tamu}
+\end{icmlauthorlist}
+
+\icmlaffiliation{tamu}{Department of Computer Science \& Engineering, Texas A\&M University, TX, USA}
+\icmlaffiliation{ustc}{Department of Electronic Engineering and Information Science, University of Science and Technology of China, Hefei, China}
+\icmlaffiliation{sichuan}{West China Biomedical Big Data Center,  West China Hospital, Chengdu, China}
+
+\icmlcorrespondingauthor{Shuiwang Ji}{sji@tamu.edu}
+
+
+% You may provide any keywords that you
+% find helpful for describing your paper; these are used to populate
+% the "keywords" metadata in the PDF but will not be shown in the document
+\icmlkeywords{Explainability, Graph Nerual Networks}
+
+\vskip 0.3in
+]
+
+% this must go after the closing bracket ] following \twocolumn[ ...
+
+% This command actually creates the footnote in the first column
+% listing the affiliations and the copyright notice.
+% The command takes one argument, which is text to display at the start of the footnote.
+% The \icmlEqualContribution command is standard text for equal contribution.
+% Remove it (just {}) if you do not need this facility.
+
+\printAffiliationsAndNotice{}  % leave blank if no need to mention equal contribution
+%\printAffiliationsAndNotice{\icmlEqualContribution} % otherwise use the standard text.
+
+\begin{abstract}
+We consider the problem of explaining the predictions of graph neural networks (GNNs), which otherwise are considered as black boxes.
+Existing methods invariably focus on explaining the importance of graph nodes or edges but ignore the substructures of graphs, which are more intuitive and human-intelligible. In this work, we propose a novel method, known as SubgraphX, to explain GNNs by identifying important subgraphs. Given a trained GNN model and an input graph, our SubgraphX explains its predictions by efficiently exploring different subgraphs with Monte Carlo tree search. To make the tree search more effective, we propose to use Shapley values as a measure of subgraph importance, which can also capture the interactions among different subgraphs. To expedite computations, we propose efficient approximation schemes to compute Shapley values for graph data. {Our work represents the first attempt to explain GNNs via identifying subgraphs explicitly and directly.} Experimental results show that our SubgraphX 
+achieves significantly improved explanations, while keeping computations at a reasonable level. 
+\end{abstract}
+
+\section{Introduction} \label{intro}
+Graph neural networks have drawn significant attention recently due to their promising performance on various graph tasks, including graph classification, node classification, link prediction, and graph generation. Different techniques have been proposed to improve the performance of deep graph models, such as graph convolution~\cite{kipf2016semi, gilmer2017neural, Gao:KDD18, wang2020advanced,yuan2021node2seq}, graph attention~\cite{velivckovic2017graph, wang2019heterogeneous}, and graph pooling~\cite{Yuan2020StructPool,gao2019graph, zhang2018end}. However, these models are still treated as black boxes, and their predictions lack explanations. Without understanding and reasoning the relationships behind the predictions, these models cannot be understood and fully trusted, which prevents their applications in critical areas. This raises the need of investigating the explainability of deep graph models. 
+
+Recently, extensive efforts have been made to study explanation techniques for deep models on images and text~\cite{simonyan2013deep, yuan2019Interpreting, smilkov2017smoothgrad, yuan2020interpreting, yang2019xfake, du2018towards}. These methods can explain both general network behaviors and input-specific predictions via different strategies.
+However, the explainability of GNNs is still less explored. Unlike images and texts, graphs are not grid-like data and contain important structural information. Thus, methods for images and texts cannot be applied directly. While several recent studies have developed GNN explanation methods, such as GNNExplainer~\cite{ying2019gnnexplainer}, PGExplainer~\cite{luoparameterized}, and PGM-Explainer~\cite{vu2020pgm}, they invariably focus on explainability at node, edge, or node feature levels, { and only consider subgraphs indirectly via regularization terms.}
+We argue that subgraph-level explanations are more intuitive and useful, since subgraphs can be simple building blocks of complex graphs and are highly related to the functionalities of graphs~\cite{alon2007network,milo2002network}. 
+
+In this work, we propose the SubgraphX, a novel GNN explanation method that can identify important subgraphs to explain GNN predictions. Specifically, we propose to employ the Monte Carlo tree search algorithm~\cite{silver2017mastering} to efficiently explore different
+subgraphs for a given input graph. Since the information aggregation procedures in GNNs can be interpreted as interactions among different graph structures, we propose to employ Shapley values~\cite{kuhn1953contributions} to measure the importance of subgraphs by capturing such interactions. Furthermore, we propose efficient approximation schemes to Shapley values by considering interactions only within the information aggregation range.
+Altogether, our work represents the first attempt to explain GNNs via identifying subgraphs explicitly.
+We conduct both qualitative and quantitative experiments to evaluate the effectiveness and efficiency of our SubgraphX.
+Experimental results show that our proposed SubgraphX can provide better explanations for a variety of GNN models. In addition, our method has a reasonable computational cost given its superior performance. 
+
+
+
+\section{Related Work}
+
+\subsection{Graph Neural Networks}
+Graph neural networks have demonstrated their effectiveness on different graph tasks. Several approaches are proposed to learn representations for nodes and graphs, such as GCNs~\cite{kipf2016semi}, GATs~\cite{velivckovic2017graph}, and GINs~\cite{xu2018powerful}, etc. These methods generally follow an information aggregation scheme that the features of a target node are obtained by aggregating and combining the features from its neighboring nodes. Here we use GCNs as an example to illustrate such information aggregation procedures. 
+Formally, a graph $\mathcal{G}$ with $m$ nodes can be represented by an adjacency matrix $A \in \{0,1\}^{m\times m}$ and a feature matrix $X \in \mathbb{R}^{m\times d}$ assuming that each node is associated with a $d$-dimensional feature vector. Then the aggregation operation in GCNs can be mathematically written as  
+$X_{i+1} = \sigma(D^{-\frac{1}{2}}\hat{A}D^{-\frac{1}{2}}X_{i}W_{i})$,
+where $X_{i}$ denotes the output feature matrix of $i-$th GCN layer and $X_0$ is set to $X_0=X$. The node features are  transformed from $X_{i} \in \mathbb{R}^{m\times c_{i}}$ to $X_{i+1} \in \mathbb{R}^{m\times c_{i+1}}$. 
+Note that $\hat{A}=A+I$ is employed to add self-loops and $D$ is a diagonal node degree matrix to perform normalization on $\hat{A}$. In addition, 
+$W_{i}\in \mathbb{R}^{c_{i}\times c_{i+1}}$ is a
+learnable weight matrix to perform linear transformations on features and $\sigma(\cdot)$ is the non-linear activation function.
+
+\subsection{Explainability in Graph Neural Networks}
+Even though explaining GNNs is crucial to understand and trust deep graph models, the explainability of GNNs is still less studied, compared with the image and text domains. 
+Recently, several methods are proposed specifically to explain deep graph models. 
+These methods mainly focus on explaining GNNs by identifying important nodes, edges, node features. 
+However, none of them can provide input-dependent subgraph-level explanations, which is important for understanding graph models. 
+Following a recent survey work~\cite{yuan2020explainability},  we categorize these methods into several classes; those are, gradients/features-based methods, decomposition methods, surrogate methods, generation-based methods, and perturbation-based methods. 
+
+
+First, several methods employ gradient values or feature values to study the importance of input graph nodes, edges, or node features~\cite{baldassarre2019explainability, pope2019explainability}. These methods generally extend existing image explanation techniques to the graph domain, such as SA~\cite{zeiler2014visualizing}, CAM~\cite{zhou2016learning}, and Guided BP~\cite{springenberg2014striving}. While these methods are simple and efficient, they cannot incorporate the special properties of graph data. Meanwhile, decomposition methods, such as LRP~\cite{schwarzenberg2019layerwise}, Excitation BP~\cite{pope2019explainability}, and GNN-LRP~\cite{schnake2020xai}, explain GNNs by decomposing the original model predictions into several terms and associating these terms with graph nodes or edges. These methods generally follow a backpropagation manner to decompose predictions layer by layer until input space.  In addition, existing methods~\cite{huang2020graphlime, vu2020pgm} employ a simple and interpretable model as the surrogate method to capture local relationships of deep graph models around the input data. Then the explanations of the surrogate method are treated as the explanations of the original predictions. Furthermore,  recent work XGNN~\cite{xgnn} proposes to study general and high-level explanations of GNNs by generating graph patterns to maximize a certain prediction. 
+
+In addition, a popular direction to explain GNNs is known as the perturbation-based method. It monitors the changes in the predictions by perturbing different input features and identifies the features affecting predictions the most. For example,  GNNExplainer~\cite{ying2019gnnexplainer} optimizes soft masks for edges and node features to maximize the mutual information between the original predictions and new predictions. Then the optimized masks can identify important edges and features. Meanwhile,  PGExplainer~\cite{luoparameterized} learns a parameterized model to predict whether an edge is important, which is trained using all edges in the dataset. It employs the reparameterization trick~\cite{jang2016categorical} to obtain approximated discrete masks instead of soft masks. In addition, GraphMask~\cite{schlichtkrull2020interpreting} follows a similar idea as PGExplainer that train a classifier to predict if an edge can be dropped without affecting model predictions. However, it studies the edges in every GNN layer while PGExplainer only focuses on the input space. 
+
+\begin{figure*}[ht!]
+    \centering
+    \includegraphics[width=1.76\columnwidth]{figure/mcts_new.pdf}
+    %\vspace{-0.5cm}
+    \caption{An illustration of our proposed SubgraphX. The bottom shows one selected path from the root to leaves in the search tree, which corresponds to one iteration of MCTS. For each node, its subgraph is evaluated by computing the Shapley value via Monte-Carlo sampling.
+    In this example, we show the computation of Shapley value for the middle node (shown in red dashed box) where three coalitions are sampled to compute the marginal contributions. 
+    Note that nodes that are not selected are ignored for simplicity.}
+    \label{fig:xsub}
+\end{figure*}
+
+
+
+\section{The Proposed SubgraphX}
+
+{While most current methods for GNN explanations are invariably based on directly identifying important nodes or edges, we argue that directly studying important subgraphs is more natural and may lead to better explainability.} In this work, we propose a novel approach, known as SubgraphX, to explain GNNs by exploring and identifying important subgraphs.
+
+\subsection{From Node and Edge to Subgraph Explanations}
+
+Unlike images and texts, graph data contain important structural information, which is highly related to the properties of graphs. For example, network motifs, which can be considered as graph substructures, are simple building blocks of complex networks and may determine the functionalities of graphs in many domains, such as biochemistry, ecology, neurobiology, and engineering~\cite{alon2007network,milo2002network,shen2002network,alon2019introduction}. Hence, investigating graph substructures is a crucial step towards the reverse engineering and understanding of the underlying mechanisms of GNNs. In addition, subgraphs are more intuitive and human-intelligible~\cite{yuan2020explainability}.
+
+While different methods are proposed to explain GNNs, none of them can directly provide subgraph-level explanations for individual input examples. The XGNN can obtain graph patterns to explain GNNs but its explanations are not input-dependent and less precise.  The other methods, such as GNNExplainer and PGExplainer, may obtain subgraph-level explanations by combining nodes or edges to form subgraphs in a post-processing manner. However, the important nodes or edges in their explanations are not guaranteed to be connected. 
+Meanwhile, since GNNs are very complex, node/edge importance cannot be directly converted to subgraph importance. 
+Furthermore, these methods ignore the interactions among different nodes and edges, which may contain important information. Hence, in this work, we propose a novel method, known as SubgraphX, to directly study the subgraphs to provide explanations. The explanations of our SubgraphX are connected subgraphs, which are more human-intelligible. In addition, by incorporating Shapley values, our method can capture the interactions among different graph structures when providing explanations. 
+
+
+  
+
+\subsection{Explaining GNNs with Subgraphs}
+We first present a formal problem formulation. Let $f(\cdot)$ denote the trained GNNs to be explained. Without loss of generality,
+we introduce our proposed SubgraphX by considering $f(\cdot)$ as a graph classification model. Given an input graph $\mathcal{G}$, its predicted class is represented as ${y}$.
+%and the corresponding predicted probability is $p=f(\mathcal{G})_y$. 
+The goal of our explanation task is to find the most important subgraph for the prediction ${y}$. Since disconnected nodes are hard to understand, we only consider connected subgraphs to enable the explanations to be more human-intelligible. Then the set of connected subgraphs of $\mathcal{G}$ is denoted as $\{\mathcal{G}_1, \cdots,\mathcal{G}_i, \cdots, \mathcal{G}_n \}$ where $n$ is the number of different connected subgraphs in $\mathcal{G}$. 
+The explanation of prediction ${y}$ for input graph $\mathcal{G}$ can then be defined as 
+\begin{equation}\label{eq1}
+\mathcal{G}^*= \argmax_{|\mathcal{G}_i|\leq N_{\min}} \mbox{Score}(f(\cdot), \mathcal{G}, \mathcal{G}_i ), 
+\end{equation}
+where $\mbox{Score}(\cdot,\cdot,\cdot)$ is a scoring function for evaluating the importance of a subgraph given the trained GNNs and the input graph. We use $N_{\min}$ as an upper bound on the size of subgraphs so that the obtained explanations are succinct enough. 
+A straightforward way to obtain $\mathcal{G}^*$ is to enumerate all possible $\mathcal{G}_i$ and select the most important one as the explanation. However, such a brute-force method is intractable when the graph is complex and large-scale. Hence, in this work, we propose to incorporate search algorithms to explore subgraphs efficiently.  
+Specifically, we propose to employ Monte Carlo Tree Search (MCTS)~\cite{silver2017mastering, jin2020multi} as the search algorithm. 
+In addition, since the information aggregation procedures in GNNs can be understood as interactions between different graph structures, we propose to employ the Shapley value~\cite{kuhn1953contributions} as the scoring function to measure the importance of different subgraphs by considering such interactions. We illustrate our proposed SubgraphX in Figure~\ref{fig:xsub}. 
+After searching, the subgraph with the highest score is considered as the explanation of the prediction $y$ for input graph $\mathcal{G}$. Note that our proposed SubgraphX can be easily extended to use other search algorithms and scoring functions. 
+
+\subsection{Subgraph Exploration via MCTS}
+In our proposed SubgraphX, we employ the MCTS as the search algorithm to guide our subgraph explorations. We build a search tree in which the root is associated with the input graph and each of other nodes corresponds to a connected subgraph. Each edge in our search tree denotes that the graph associated with a child node can be obtained by performing node-pruning from the graph associated with its parent node.
+Formally, we define a node in this search tree as $\mathcal{N}_i$, and $\mathcal{N}_0$ denotes the root node. The edges in the search tree represent the pruning actions $a$. Note that 
+each node may have many pruning actions, and these actions can be defined based on the dataset at hand or domain knowledge. Then the MCTS algorithm records the statistics of visiting counts and rewards to guide the exploration and reduce the search space. 
+Specifically, for the node and pruning action pair $(\mathcal{N}_i, a_j)$, we assume that the subgraph $\mathcal{G}_j$ is obtained by action $a_j$ from $\mathcal{G}_i$. Then the 
+MCTS algorithm records four variables for $(\mathcal{N}_i, a_j)$, which are defined as:
+\begin{itemize}[noitemsep, topsep=0pt,leftmargin=*]
+    \item $C(\mathcal{N}_i, a_j)$ denotes the number of counts for selecting action $a_j$ for node $\mathcal{N}_i$.
+    \item $W(\mathcal{N}_i, a_j)$ is the total reward for all $(\mathcal{N}_i, a_j)$ visits.
+    \item $Q(\mathcal{N}_i, a_j)=W(\mathcal{N}_i, a_j)/C(\mathcal{N}_i, a_j)$ and denotes the averaged reward for multiple visits.
+    \item $R(\mathcal{N}_i, a_j)$ is the immediate reward for selecting $a_j$ on $\mathcal{N}_i$, which is used to measure the importance of subgraph $\mathcal{G}_j$. We propose to use $R(\mathcal{N}_i, a_j)= \mbox{Score}(f(\cdot), \mathcal{G}, \mathcal{G}_j)$. 
+\end{itemize}
+
+In each iteration, the MCTS selects a path starting from the root $\mathcal{N}_0$ to a leaf node $\mathcal{N}_\ell$. Note that the leaf nodes can be defined based on the numbers of nodes in subgraphs such that $|\mathcal{N}_\ell| \leq N_{\min}$.
+Formally, the action selection criteria of node $\mathcal{N}_i$ are defined as 
+\begin{align}
+a^* &= \argmax_{a_j} Q(\mathcal{N}_i, a_j) +  U(\mathcal{N}_i, a_j),\label{eq2} \\
+U(\mathcal{N}_i, a_j) &=  \lambda R(\mathcal{N}_i, a_j)\frac{\sqrt{\sum_{k} C(\mathcal{N}_i, a_k)}}{1+ C(\mathcal{N}_i, a_j)},\label{eq3}
+\end{align}
+where $\lambda$ is a hyperparameter to control the trade-off between exploration and exploitation. In addition, $\sum_{k} C(\mathcal{N}_i, a_k)$ denotes the total visiting counts for all possible actions of  node $\mathcal{N}_i$. Then the subgraph in the leaf node $\mathcal{N}_\ell$ is evaluated and the importance score is denoted as $\mbox{Score}(f(\cdot), \mathcal{G}, \mathcal{G}_\ell)$. Finally, all node and action pairs selected in this path are updated as 
+\begin{align}
+C(\mathcal{N}_i, a_j) &= C(\mathcal{N}_i, a_j) + 1 ,\label{eq4} \\
+W(\mathcal{N}_i, a_j) &=  W(\mathcal{N}_i, a_j) + \mbox{Score}(f(\cdot), \mathcal{G}, \mathcal{G}_\ell).\label{eq5}
+\end{align}
+After searching for several iterations, we select the subgraph with the highest score from the leaves as the explanation. Note that in early iterations, the MCTS tends to select child nodes with low visit counts in order to explore different possible pruning actions. In later iterations, the MCTS tends
+to select child nodes that yield higher rewards, \emph{i.e.}, more important subgraphs.
+
+
+
+\subsection{A Game-Theoretical Scoring Function}
+In our proposed SubgraphX, both the MCTS rewards and the explanation selection are highly depending on the scoring function $\mbox{Score}(\cdot,\cdot,\cdot)$. It is crucial to properly measure the importance of different subgraphs. One possible solution is to directly feed the subgraphs to the trained GNNs $f(\cdot)$ and use the predicted scores as the importance scores. However, it cannot capture the interactions between different graph structures, thus affecting the explanation results. Hence, in this work, we propose to adopt the Shapley values~\cite{kuhn1953contributions, lundberg2017unified, chen2018shapley} as the scoring function. The Shapley value is a solution concept from the cooperative game theory for fairly assigning a total game gain to different game players. To apply it to graph model explanation tasks, we use the GNN prediction as the game gain and different graph structures as players.   
+
+Formally, given the input graph $\mathcal{G}$ with $m$ nodes and the trained GNN $f(\cdot)$, we study the Shapley value for a target subgraph $\mathcal{G}_i$ with $k$ nodes. Let $V = \{v_1, \cdots, v_i, \cdots, v_m \}$ denote all nodes in $\mathcal{G}$ and we assume that the nodes in $\mathcal{G}_i$ are $\{v_1, \cdots, v_k\}$ while the other nodes $\{v_{k+1}, \cdots, v_m\}$ belong to $\mathcal{G}\setminus \mathcal{G}_i$. Then the set of players is defined as $P= \{\mathcal{G}_i, v_{k+1}, \cdots, v_m\}$, where we consider the whole subgraph $\mathcal{G}_i$ as one player.  Finally, the Shapley value of the player $\mathcal{G}_i$ can be  computed as
+\begin{align}
+\hspace{-0.3cm}\phi(\mathcal{G}_i)&=\sum_{S\subseteq P\setminus\{\mathcal{G}_i\}}\frac{|S|!\left(|P|-|S|-1\right)!}{|P|!}m(S,{G}_i),\label{eq:6}\\
+\hspace{-0.3cm}m(S,\mathcal{G}_i) &= f\left(S\cup\{\mathcal{G}_i\}\right)-f(S),\label{eq:7}
+\end{align}
+where $S$ is the possible coalition
+set of players. Note that $m(S,\mathcal{G}_i)$ represents  the marginalized contribution of player $\mathcal{G}_i$ given the coalition set $S$. It can be computed by the difference of predictions between incorporating $\mathcal{G}_i$ with and without the coalition set $S$. The obtained Shapley value $\phi(\mathcal{G}_i)$ considers all different coalitions to capture the interactions. It is the only solution that satisfies four desirable axioms, including efficiency, symmetry, linearity, and dummy axiom~\cite{lundberg2017unified}, which can guarantee the correctness
+and fairness of the explanations. However, computing Shapley values using Eqs. (\ref{eq:6}) and (\ref{eq:7}) is time-consuming as it enumerates all possible coalitions, especially for large-scale and complex graphs. Hence, in this work, we propose to incorporate the GNN architecture information $f(\cdot)$ to efficiently approximate Shapley values.
+
+
+\subsection{Graph Inspired Efficient Computations}
+
+In graph neural networks, the new features of a target node are obtained by aggregating information from a limited neighboring region. Assuming there are $L$ layers of GNN in the graph model $f(\cdot)$, then only the neighboring nodes within $L$-hops are used for information aggregation. Note that the information aggregation schema can be considered as interactions between different graph structures. Hence, the subgraph $\mathcal{G}_i$ mostly interacts with the neighbors within $L$-hops. Based on such observations, we propose to compute the Shapley value of $\mathcal{G}_i$ by only considering its $L$-hop neighboring nodes. Specifically, assuming there are $r$ ($r\leq m-k$) nodes within $L$-hop neighboring of subgraph $\mathcal{G}_i$, we denote these nodes as $\{v_{k+1}, \cdots, v_r\}$. Then the new set of players we need to consider is represented as 
+$P'= \{\mathcal{G}_i, v_{k+1}, \cdots, v_r\}$. By incorporating  $P'$, the Shapley value of $\mathcal{G}_i$ can be defined as 
+\begin{equation}\label{eq:9}
+\phi(\mathcal{G}_i)=\sum_{S\subseteq P'\setminus\{\mathcal{G}_i\}}\frac{|S|!\left(|P'|-|S|-1\right)!}{|P'|!}m(S,{G}_i).
+\end{equation}
+
+\begin{algorithm}[tb]
+   \caption{The algorithm of our proposed SubgraphX.}
+   \label{alg:algo1}
+\begin{algorithmic}
+   \STATE {\bfseries Input:} GNN model $f(\cdot)$, input graph $\mathcal{G}$, MCTS iteration number $M$, the leaf threshold node number $N_{\min}$, $h(\mathcal{N}_i)$ denotes the associated subgraph of tree node $\mathcal{N}_i$. 
+    \STATE {\bfseries Initialization:} for each $(\mathcal{N}_i, a_j)$ pair , initialize its $C$, $W$, $Q$, and $R$ variables as 0. The root of search tree is $\mathcal{N}_0$ associated with graph $\mathcal{G}$. The leaf set is set to  $S_\ell = \{\}$. 
+   \FOR{$i=1$ {\bfseries to} $M$}
+   \STATE $curNode = \mathcal{N}_0$, $curPath = [\mathcal{N}_0]$
+   \WHILE{ $h(curNode)$ has more node than $N_{\min}$}
+   \FOR{all possible pruning actions of $h(curNode)$ }
+   \STATE Obtain child node $\mathcal{N}_j$ and its subgraph $\mathcal{G}_j$.
+   \STATE  Compute $R(curNode, a_j)= \mbox{Score}(f(\cdot), \mathcal{G}, \mathcal{G}_j))$ with Algorithm~\ref{alg:algo2}.
+   \ENDFOR
+   \STATE Select the child $\mathcal{N}_{next}$ following Eq.(\ref{eq2}, \ref{eq3}).
+   \STATE $curNode = \mathcal{N}_{next}$, $curPath = curPath + \mathcal{N}_{next}$.
+   \ENDWHILE
+   \STATE $S_\ell= S_\ell \cup \{curNode\}$
+   \STATE Update nodes in $curPath$ following Eq.(\ref{eq4}, \ref{eq5}).
+   \ENDFOR
+   \STATE Select subgraph with the highest score from $S_\ell$.
+\end{algorithmic}
+\end{algorithm}
+However, since graph data are complex that different nodes have variable numbers of neighbors, then $P'$ may still contain a large number of players, thus affecting the efficiency of computation. Hence, in our SubgraphX, we further incorporate the Monte-Carlo sampling~\cite{vstrumbelj2014explaining} to compute $\phi(\mathcal{G}_i)$. 
+Specifically, for sampling step $i$, we sample a coalition set $S_i$ from the player set $P'\setminus\{\mathcal{G}_i\}$ and compute its marginalized contribution
+$m(S_i,\mathcal{G}_i)$. Then the averaged contribution score for multiple sampling steps is regarded as the approximation of $\phi(\mathcal{G}_i)$. Formally, it can be mathematically written as
+\begin{equation}\label{eq:10}
+\phi(\mathcal{G}_i)= \frac{1}{T}\sum_{t=1}^T (f\left(S_i\cup\{\mathcal{G}_i\}\right)-f(S_i)),
+\end{equation}
+where $T$ is the total sampling steps. In addition, to compute the marginalized contribution, we follow a zero-padding strategy. Specifically, to compute $f\left(S_i\cup\{\mathcal{G}_i\}\right)$, we consider the nodes $V\setminus \left(S_i\cup\{\mathcal{G}_i\}\right)$ which are not belonging to the coalition or the subgraph and set their node features to all zeros. Then we feed the new graph to the GNNs $f(\cdot)$ and use the predicted probability as $f\left(S_i\cup\{\mathcal{G}_i\}\right)$. Similarly, we can compute $f(S_i)$ by setting nodes $V\setminus S_i$ with zero features and feeding to the GNNs. It is noteworthy that we only perturb the node features instead of removing the nodes from the input graph because graphs are very sensitive to structural changes~\cite{schlichtkrull2021interpreting}. Finally, we conclude the computation steps of our proposed SubgraphX in Algorithm~\ref{alg:algo1} and~\ref{alg:algo2}. {Note that $N_{min}$ determines the stop condition in MCTS, and we can select subgraphs with specific sizes from internal nodes of the search tree as needed.}
+
+\begin{algorithm}[tb]
+   \caption{The algorithm of subgraph Shapley value.}
+   \label{alg:algo2}
+\begin{algorithmic}
+   \STATE {\bfseries Input:} GNN model $f(\cdot)$ with $L$ layers, input graph $\mathcal{G}$ with nodes $V=\{v_1,\dots,v_m\}$, subgraph $\mathcal{G}_i$ with $k$ nodes $\{v_1,\dots,v_k\}$, Monte-Carlo sampling steps $T$.
+   \STATE {\bfseries Initialization:} Obtain the $L$-hop neighboring nodes of $\mathcal{G}_i$, denoted as $\{v_{k+1}, \cdots, v_r\}$. Then the set of players is $P'= \{\mathcal{G}_i, v_{k+1}, \cdots, v_r\}$.
+   \FOR{$i=1$ {\bfseries to} $T$}
+   \STATE Sampling a coalition set $S_i$ from $P'\setminus\{\mathcal{G}_i\}$. 
+   \STATE Set nodes from $V\setminus \left(S_i\cup\{\mathcal{G}_i\}\right)$ with zero features and feed to the GNNs $f(\cdot)$ to obtain $f(S_i\cup\{\mathcal{G}_i\})$.  
+   \STATE Set nodes from $V\setminus S_i$ with zero features and feed to the GNNs $f(\cdot)$ to obtain $f(S_i)$. 
+   \STATE Then $m(S_i, \mathcal{G}_i)= f(S_i\cup\{\mathcal{G}_i\})- f(S_i)$.
+   \ENDFOR
+   \STATE {\bfseries Return:} $\mbox{Score}(f(\cdot), \mathcal{G}, \mathcal{G}_i) = \frac{1}{T}\sum_{t=1}^T m(S_i, \mathcal{G}_i)$.
+\end{algorithmic}
+\end{algorithm}
+
+
+
+\subsection{SubgraphX for Generic Graph Tasks}
+
+We have described our proposed SubgraphX using graph classification models as an example. It is noteworthy that our SubgraphX can be easily generalized to explain graph models on other tasks, such as node classification and link prediction. For node classification models, the explanation target is the prediction of a single node $v_i$ given the input graph $\mathcal{G}$. 
+\begin{table*}[!ht]
+    \caption{Statistics and properties of five datasets.}
+    \label{table:data}
+    \centering
+    \begin{tabular}{@{}lccccc@{}}
+        \toprule
+        \multicolumn{1}{l}{ }       &    \multicolumn{5}{c}{\textbf{Dataset}}          \\
+        \cmidrule(r){2-6}
+        & \textsc{MUTAG}     & \textsc{BBBP}& {\textsc{Graph-SST2}} & {\textsc{BA-2Motifs}} & {\textsc{BA-Shape}} \\
+        \midrule
+
+        \# of Edges (avg)  & 19.79 & 25.95 & 9.20 & 25.48  & 2055 \\
+        \# of Nodes (avg)     & 17.93  & 24.06  & 10.19 & 25.0  & 700   \\
+        \# of Graphs     & 188  & 2039 & 70042 & 1000 & 1 \\
+        \# of Classes     & 2  & 2 & 2 & 2 & 4    \\
+        \bottomrule
+    \end{tabular}
+\end{table*}
+Assuming there are $L$ layers in the GNN models, the prediction of $v_i$ only relies on its $L$-hop computation graph, denoted as $\mathcal{G}_c$. Then instead of searching from the input graph $\mathcal{G}$, our SubgraphX sets $\mathcal{G}_c$ as the corresponding graph of the search tree root $\mathcal{N}_0$. In addition, when computing the marginalized contributions, the zero-padding strategy should exclude the target node $v_i$. Meanwhile, for link prediction tasks, the explanation target is the prediction of a single link $(v_i, v_j)$. Then the root of the search tree corresponds to the $L$-hop 
+computation graph of node $v_i$ and $v_j$. Similarly, the zero-padding strategy ignores the $v_i$ and $v_j$ when perturbing node features. Note that our SubgraphX treats the GNNs as black boxes during the explanation stage and only needs to access the inputs and outputs.
+Hence, our proposed SubgraphX can be applied to a general family of GNN models, including but not limited to GCNs~\cite{kipf2016semi}, GATs~\cite{velivckovic2017graph}, GINs~\cite{xu2018powerful}, and Line-Graph NNs~\cite{chen2017supervised}.  
+
+
+
+\section{Experimental Studies} 
+
+\subsection{Datasets and Experimental Settings}
+We conduct extensive experiments on different datasets and GNN models to demonstrate the effectiveness of our proposed method. The statistics and properties of the datasets are reported in Table~\ref{table:data}.
+We evaluate our SubgraphX with five datasets for both graph classification and node classification tasks, including synthetic data, biological data, and text data. We summarize these datasets as below:
+\begin{itemize}[noitemsep, topsep=0pt,leftmargin=*]
+\item MUTAG~\cite{debnath1991structure} and BBBP~\cite{wu2018moleculenet} are molecular datasets for graph classification tasks. In these datasets, each graph represents a molecule while nodes are atoms and edges are bonds. The labels are determined by the chemical functionalities of molecules.
+\item Graph-SST2~\cite{yuan2020explainability} is sentiment graph dataset for graph classification. It converts text sentences to graphs with Biaffine parser~\cite{gardner2018allennlp} that nodes denote words and edges represent the relationships between words. Note that node embeddings are initialized as the pre-trained BERT word embeddings~\cite{devlin2018bert}. 
+Each graph is labeled by its sentiment, which can be positive or negative.  
+\item BA-2Motifs is a synthetic graph classification dataset. Each graph contains a based graph generated by \textit{Barabási-Albert} (BA) model, which is connected with a house-like motif or a five-node cycle motif. The graphs are labeled based on the type of motifs. All node embeddings are initialized as vectors containing all 1s. 
+\item BA-Shape is a synthetic node classification dataset. Each graph contains a base BA graph and several  house-like five-node motifs. The node labels are determined by the memberships and locations of different nodes. All node embeddings are initialized as vectors containing all 1s.  
+\end{itemize}
+
+
+
+
+\begin{figure*}[ht!]
+    \centering
+    \includegraphics[width=2\columnwidth]{figure/vis3.pdf}
+    %\vspace{-0.4cm}
+    \caption{Explanation results on the Graph-SST2 dataset with a GAT graph classifier. The input sentences are shown on the top of explanations. Note that some ``unimportant'' words are ignored for simplicity. 
+    The first row shows explanations for a correct prediction and the second row reports the results for an incorrect prediction.}
+    \label{fig:vis3}
+\end{figure*}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figure/vis1.pdf}
+    %\vspace{-0.7cm}
+    \caption{Explanation results on the BA-2Motifs dataset with a GCN graph classifier. The first row shows explanations for a correct prediction and the second row reports the results for an incorrect prediction.}
+    \label{fig:vis1}
+\end{figure}
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figure/vis2.pdf}
+    %\vspace{-0.7cm}
+    \caption{Explanation results on the MUTAG dataset with a GIN graph classifier. We show the explanations for two correct predictions. Here Carbon, Oxygen, and Nitrogen are shown in yellow, red, and blue, respectively.  }
+    \label{fig:vis2}
+\end{figure}
+We explore three variants of GNNs on these datasets, including GCNs, GATs, and GINs. All GNN models used in our experimental studies are trained to obtain reasonable performance. Then we compare our SubgraphX with several baselines, including MCTS\_GNN, GNNExplainer~\cite{ying2019gnnexplainer}, PGExplainer~\cite{luoparameterized}. {Note that GNNExplainer and PGExplainer represent the 
+state-of-the-art methods for GNN explanations.}
+Here MCTS\_GNN denotes the method using MCTS to explore subgraphs but directly employing the GNN predictions of these subgraphs as the scoring function. 
+{We wish to mention that all methods are compared with a fair setting. We use the same number to control the maximum number of nodes in the explanations for all methods.}
+
+
+We conduct our experiments using one Nvidia V100 GPU on an Intel Xeon Gold 6248 CPU. Our implementations are based on Python 3.7.6, PyTorch 1.6.0, and Torch-geometric 1.6.3. For our proposed SubgraphX and other algorithms with MCTS, the MCTS iteration number $M$ is set to 20. To explore a suitable trade-off between exploration and exploitation, we set the hyperparameter $\lambda$ in Eq.(\ref{eq3}) to 5 for Graph-SST2 (GATs) and BBBP (GCNs) models, and 10 for other models. Since all GNN models contain 3 network layers, we consider 3-hop computational graphs to compute Shapley values for our SubgraphX. For the Monte-Carlo sampling in our SubgraphX, we set the Monte-Carlo sampling steps  $T$ to 100 for all datasets. For MCTS$^\dagger$, we set Monte-Carlo sampling steps to 1000 to obtain good approximations since it samples from all nodes in a graph. 
+More details regarding the datasets, trained GNN models, and experimental settings can be found in Supplementary Section~\ref{sup:data}. Our code and data are now publicly available in the DIG library~\cite{liu2021dig}\footnote{\url{https://github.com/divelab/DIG}}.
+
+
+
+
+\subsection{Explanations for Graph Classification Models}
+We first visually compare our SubgraphX with the other baselines using graph classification models. The results are reported in Figure~\ref{fig:vis1},~\ref{fig:vis2}, and~\ref{fig:vis3} where important substructures are shown in the bold.
+
+
+The explanation results of the BA-2Motifs dataset are visualized in Figure~\ref{fig:vis1}. 
+We use the GCNs as the graph classifier and report explanations for both correct and incorrect predictions. Since it is a synthetic dataset, we may consider the motifs as reasonable approximations of explanation ground truth. In the first row, the model prediction is correct and our SubgraphX can precisely identify the house-like motif as the most important subgraph. In the second row,
+our SubgraphX explains the incorrect prediction that the GNN model cannot capture the five-node cycle motif as the important structure, and hence the prediction is wrong. {For both cases, our SubgraphX can provide better visual explanations since our method can precisely identifies the succinct subgraphs that can reasonably explain the predictions.}
+In addition, our explanations are connected subgraphs while PGExplainer and GNNExplainer identify discrete edges. 
+
+
+We also show the explanation results of the MUTAG dataset in Figure~\ref{fig:vis2}. Note that GINs are employed as the graph classification model to be explained. Since the MUTAG dataset is a real-world dataset and there is no ground truth for explanations, we evaluate the explanation results based on chemical domain knowledge. The graphs in MUTAG are labeled based on the mutagenic effects on a bacterium. It is known that carbon rings and $NO_2$ groups tend to be mutagenic~\cite{debnath1991structure}. We study whether the explanations provided by different methods can match the carbon rings and $NO_2$ groups identified in chemistry.
+In both examples, the predictions are ``mutagenic'' and our SubgraphX successfully and precisely identifies the carbon rings as important subgraphs. Meanwhile, the MCTS\_GNN can capture the key subgraphs but include several additional edges. The results of the PGExplainer and GNNExplainer still contain several discrete edges. 
+
+\begin{figure*}[ht!]
+    \centering
+    \includegraphics[width=2\columnwidth]{figure/metric2.pdf}
+    %\vspace{-0.4cm}
+    \caption{The quantitative studies for different explanation methods. Note that since the Sparsity scores cannot be fully controlled, we compare different methods with Fidelity scores under similar similar levels of Sparsity.}
+    \label{fig:vis5}
+\end{figure*}
+
+For the dataset Graph-SST2, we employ GATs as the graph model and report the results in Figure~\ref{fig:vis3}.
+In the first row, the prediction is correct and the label is positive. Both our SubgraphX and the MCTS\_GNN can find word phrases with positive semantic meaning, such as ``makes old story new'', which can reasonably explain the prediction. The explanations provided by PGExplainer and GNNExplainer are, however, less semantically related. In the second row, the input is negative but the prediction is positive. All methods except PGExplainer can explain the decision that the GNN model regards positive phrases ``truly going to inspire'' as important, thus yielding a positive but incorrect prediction. It is noteworthy that our method tends to include fewer neural words, such as ``the'', ``me'', and ``screen'', etc. 
+
+
+Overall, our SubgraphX can explain both correct and incorrect predictions for different graph data and GNN models. Our explanations are more 
+human-intelligible than comparing methods. 
+More results for graph classification models are reported in Supplementary Section~\ref{sup:gc}. 
+
+
+\subsection{Explanations for Node Classification Models}
+We also compare different methods on the node classification tasks. We use the BA-Shape dataset and train a GCN model to perform node classification.  The visualization results are reported in Figure~\ref{fig:vis4} where the important substructures are shown in bold. We can verify if the explanations are consistent with the rules (the motifs) to label different nodes. 
+For both examples, the target nodes are correctly classified.
+Obviously, our SubgraphX is precisely targeting the motifs as the explanations, which is reasonable and promising. For other methods, their explanations only cover partial motifs and include other structures.  
+More results are reported in Supplementary Section~\ref{sup:nc}. 
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figure/vis4.pdf}
+    %\vspace{-0.7cm}
+    \caption{Explanation results on the BA-Shape dataset. The target node is shown in a larger size. Different colors denote node labels.}
+    \label{fig:vis4}
+\end{figure}
+
+\begin{table*}
+    \caption{Efficiency studies of different methods.
+    }
+    \label{Analysis}
+    \centering
+    \begin{tabular}{@{}lccccc@{}}
+        \toprule[1.5pt]
+        \textbf{Method}  & \textbf{MCTS$^*$}     & \textbf{MCTS$^\dagger$}& \textbf{SubgraphX} & \textbf{GNNExplainer} &  \textbf{PGExplainer}    \\
+        \midrule[1pt] 
+        \textsc{Time}  & $>$10 hours  & $865.4\pm1.6$s  & $77.8\pm3.8$s & $16.2\pm0.2$s & $0.02$s (Training 362s)   \\
+        \textsc{Fidelity} & N/A & 0.53  & 0.55 & 0.19 &  0.18 \\
+        \bottomrule[1pt]
+    \end{tabular}
+\end{table*}
+\subsection{Quantitative Studies}
+While visualizations are important to evaluate different explanation methods, human evaluations may not be accurate due to the lack of ground truths. Hence, we further conduct quantitative studies to compare these methods. Specifically, we employ the metrics Fidelity and Sparsity to evaluate explanation results~\cite{pope2019explainability, yuan2020explainability}. The Fidelity metric measures whether the explanations are faithfully important to the model's predictions. It removes the important structures from the input graphs and computes the difference between predictions. In addition, the Sparsity metric measures the fraction of structures that are identified as important by explanation methods. Note that high Sparsity scores mean smaller structures are identified as important, which can affect the Fidelity scores since smaller structures (high Sparsity) tend to be less important (low Fidelity). Hence, for fair comparisons, we compare different methods using Fidelity under similar levels of Sparsity. The results are reported in Figure~\ref{fig:vis5} where we plot the curves of Fidelity scores with respect to the Sparsity scores. Obviously, for five out of six experiments, our proposed method outperforms the comparing methods significantly and consistently under different sparsity levels. For the BA-Shape (GCN) experiment, our SubgraphX obtains slightly lower but still competitive  Fidelity scores compared with the PGExplainer. Overall, such results indicate that the explanations of our method are more faithful and important to the GNN models.
+More details of evaluation metrics are introduced in Supplementary Section~\ref{sup:data}. 
+
+
+\subsection{Efficiency Studies} \label{article:efficiency}
+Finally, we study the efficiency of our proposed method. For 50 graphs with an average of 24.96 nodes from the BBBP dataset, we show the averaging time cost to obtain explanations for each graph. We repeat the experiments 3 times and report the results Table~\ref{Analysis}.  Here MCTS$^*$ denotes the baseline that follows Eq. (\ref{eq:9}) to compute Shapley values. Compared with our SubgraphX, the difference is the usage of Monte Carlo sampling. In addition, MCTS$^\dagger$ indicates the baseline computing Shapley values with Monte Carlo sampling but without our proposed approximation schemes. Specifically, MCTS$^\dagger$ samples coalition sets from the player set $P$ instead of the reduced set $P'$.
+First, the time cost of MCTS$^*$ is extremely high since it needs to enumerate all possible coalition sets. Next, compared with MCTS$^\dagger$, our SubgraphX is 11 times faster while the obtained explanations have similar Fidelity scores. It demonstrates our approximation schemes are both effective and efficient. Even though our method is slower than GNNExplainer and PGExplainer, the Fidelity scores of our explanations are 300\% higher than theirs. 
+{Furthermore, 
+the PGExplainer requires to train its model using the whole dataset. While 
+offline model training cost is not directly comparable, the additional and significant time cost may be an issue when the dataset is large-scale.} Considering our explanations are with higher-quality and more human-intelligible, we believe such time complexity is reasonable and acceptable. 
+
+\subsection{Study of Pruning Actions}\label{sup:pa}
+Finally, we discuss the pruning actions in our MCTS. For 
+the graph associated with each non-leaf tree search node, we perform node pruning to obtain its children subgraphs. Specifically, when a node is removed, all edges connected with it are also removed. In addition, if multiple disconnected subgraphs are obtained after removing a node, only the largest subgraph is kept. Instead of exploring all possible node pruning actions, we explore two strategies: Low2high and High2low. First, Low2high arranges the nodes based on their node degrees from low to high and only considers the pruning actions corresponding to the first $k$ low degree nodes. Meanwhile, High2low arranges the nodes in order from high degree to low degree and only considers the first $k$ high degree nodes for pruning. Intuitively, High2low is more efficient but may ignore the optimal solutions. In this work, we employ the High2low strategy for BA-Shape(GCNs), and Low2high strategy for other models, and set the k to 12 for all the datasets.
+\begin{table}
+    \caption{The studies of different pruning strategies. 
+    }
+    \label{table:prun}
+    \centering
+    \begin{tabular}{@{}lccc@{}}
+        \toprule[1.5pt]
+        \textbf{Method}  & Time     &  Fidelity    \\
+        \midrule[1pt] 
+        \textsc{Low2high}  & 107.24s  & 0.66149     \\
+        \textsc{High2low} & 21.52s & 0.61046  \\
+        \bottomrule[1pt]
+    \end{tabular}
+\end{table}
+We conduct experiments to analyze these two pruning strategies for our SubgraphX algorithm and show the average time cost and Fidelity score in Table~\ref{table:prun}. Specifically, we randomly select 50 graphs from the BBBP datasets with an average node number of  24.96, which is the same in Section ~\ref{article:efficiency}. In addition, we
+set Monte-Carlo sampling steps $T$ to 100, and select the subgraphs with the highest Shapley values and contain less than 15 nodes to calculate the Fidelity. Obviously, High2low is 5 times faster than Low2high but the Fidelity scores are inferior. 
+
+\section{Conclusions} 
+While considerable efforts have been devoted to study the explainability of GNNs, none of existing methods can explain GNN predictions with subgraphs. We argue that subgraphs are building blocks of complex graphs and are more human-intelligible. To this end, we propose the SubgraphX to explain GNNs by identifying important subgraphs explicitly. We employ the Monte Carlo tree search algorithm to efficiently explore different subgraph. For each subgraph, we propose to employ Shapley values to measure its importance by considering the interactions among different graph structures. To expedite computations, we propose efficient approximation schemes to compute Shapley values by considering interactions only within the information aggregation range. Experimental results show our SubgraphX obtain higher-quality and more human-intelligible explanations while keeping time complexity acceptable. 
+
+
+% Acknowledgements should only appear in the accepted version.
+%\section*{Acknowledgements}
+%This work was supported in part by National Science Foundation grants XXXX and XXXX.
+
+
+
+% In the unusual situation where you want a paper to appear in the
+% references without citing it in the main text, use \nocite
+
+
+\bibliography{xsub}
+\bibliographystyle{icml2021}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% DELETE THIS PART. DO NOT PLACE CONTENT AFTER THE REFERENCES!
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\clearpage
+
+\onecolumn
+\icmltitle{On Explainability of Graph Neural Networks via Subgraph Explorations: Appendix}
+%\twocolumn
+
+\appendix
+%\section{Appendix}
+
+
+
+\section{Datasets and Experimental Settings}\label{sup:data}
+
+\subsection{Datasets and GNN Models}
+We employ different GNN variants to fit these datasets and explain the trained GNNs. Note that these models are trained to obtain reasonable performance. 
+Specifically, we report the architectures and performance of these GNNs as below:
+\begin{itemize}[noitemsep, topsep=0pt,leftmargin=*]
+\item \textbf{MUTAG (GCNs)}: This GNN model consists of 3 GCN layers. The input feature dimension is 7 and the output dimensions of different GCN layers are set to 128, 128, 128, respectively. We employ max-pooling as the readout function and ReLU as the activation function. The model is trained for 2000 epochs with a learning rate of 0.005 and the testing accuracy is 0.92. We study the explanations for the whole dataset.
+
+\item \textbf{MUTAG (GINs)}: This GNN model consists of 3 GIN layers. For each GIN layer, the MLP for feature transformations is a two-layer MLP. The input feature dimension is 7 and the output dimensions of different GIN layers are set to 128, 128, 128 respectively. We employ max-pooling as the readout function and ReLU as the activation function.
+The model is trained for 2000 epochs with a learning rate of 0.005 and the testing accuracy is 1.00. We study the explanations for the whole dataset.
+
+\item \textbf{BBBP (GCNs)}: This GNN model consists of 3 GCN layers. The input feature dimension is 9 and the output dimensions of different GCN layers are set to 128, 128, 128, respectively. We employ max-pooling as the readout function and ReLU as the activation function.
+The model is trained for 800 epochs with a learning rate of 0.005 and the testing accuracy is 0.863. We randomly split this dataset into the training set (80\%), validation set (10\%), and testing set (10\%). We study the explanations for the testing set.
+
+
+\item \textbf{Graph-SST2 (GATs)}: This GNN model consists of 3 GAT layers. The input feature dimension is 768 and all GAT layers have 10 heads with 10-dimensional features. We employ max-pooling as the readout function and ReLU as the activation function. In addition, we set the dropout rate to 0.6 to avoid overfitting. 
+The model is trained for 800 epochs with a learning rate of 0.005 and the testing accuracy is 0.881. We follow the training, validation, and testing splitting of the original SST2 dataset. 
+We study the explanations for the testing set.
+
+\item \textbf{BA-2Motifs (GCNs)}: This GNN model consists of 3 GCN layers. The input feature dimension is 10 and the output dimensions of different GCN layers are set to 20, 20, 20, respectively. For each GCN layer, we employ L2 normalization to normalize node features. We employ average pooling as the readout function and ReLU as the activation function. The model is trained for 800 epochs with a learning rate of 0.005 and the testing accuracy is 0.99. We randomly split this dataset into the training set (80\%), validation set (10\%), and testing set (10\%). We study the explanations for the testing set.
+
+\item \textbf{BA-Shape (GCNs)}: This GNN model consists of 3 GCN layers. The input feature dimension is 10 and the output dimensions of different GCN layers are set to 20, 20, 20, respectively. For each GCN layer, we employ L2 normalization to normalize node features. In addition, we use ReLU as the activation function. 
+The model is trained for 800 epochs with a learning rate of 0.005 and the testing accuracy is 0.957. We randomly split this dataset into the training set (80\%), validation set (10\%), and testing set (10\%). We study the explanations for the testing set.
+
+\end{itemize}
+
+\subsection{Experimental Settings}
+
+
+\subsection{Evaluation Metrics}
+We further introduce the evaluation metrics in detail. First, given a graph $G_i$, its prediction class $y_i$, and its explanation, we obtain a hard explanation mask $M_i$ where each element is 0 or 1 to indicate whether the corresponding node is identified as important. For our SubgraphX and MCTS-based baselines, the masks can be directly determined by the obtained subgraphs. For GNNExplainer and PGExplainer, their explanations are edge masks and can be converted to explanation masks by selecting the nodes connected with these important edges. Then by occluding the important nodes in $G_i$ based on $M_i$, we can obtain a new graph $\hat{G}_i$. Finally, the Fidelity score can be computed as 
+\begin{equation}
+    Fidelity = \frac{1}{N}\sum_{i=1}^{N} (f(G_i)_{y_i} - f(\hat{G}_i)_{y_i}),
+\end{equation}
+where $N$ is the total number of testing samples, $f(G_i)_{y_i}$ means the predicted probability of class $y_i$ for the original graph $G_i$. Intuitively, Fidelity measures the averaged probability change for the predictions by removing important input features. Since simply removing nodes significantly affect the graph structures, we occlude these nodes with zero features to compute the Fidelity. In addition, we also employ Sparsity to measure the fraction of nodes are selected in the explanations. Then it can be computed as 
+\begin{equation}
+    Sparsity = \frac{1}{N}\sum_{i=1}^{N}(1 - \frac{|M_i|}{|G_i|}),
+\end{equation}
+where $|M_i|$ denotes the number of important nodes identified in $M_i$ and $|G_i|$ means the number of nodes in $G_i$. Ideally, good explanations should select fewer nodes (high Sparsity) but lead to significant prediction drops (high Fidelity).
+
+
+\begin{figure*}[ht!]
+    \centering
+    \includegraphics[height=0.96\textheight,width=0.9\columnwidth]{figure/supp1_gc.pdf}
+    \caption{Explanation results of the BBBP and MUTAG datasets. Here Carbon, Oxygen, Nitrogen, and Chlorine are shown in yellow, red, and blue, green respectively.}
+    \label{supp_vis1}
+\end{figure*}
+
+\begin{figure*}[ht!]
+    \centering
+    \includegraphics[height=0.75\textheight,width=\columnwidth]{figure/supp2_text.pdf}
+    \caption{Explanation results of Grpah-SST2 dataset.}
+    \label{supp_vis2}
+\end{figure*}
+
+\begin{figure*}[ht!]
+    \centering
+    \includegraphics[width=\columnwidth]{figure/supp3_nc.pdf}
+    \caption{Explanation results of BA-Shape dataset. The target node is shown in a larger size.  }
+    \label{supp_vis3}
+\end{figure*}
+
+\section{Explanations for Graph Classification Models}\label{sup:gc}
+In this section, we report more visualizations of explanations for graph classification models. The results are reported in Figure~\ref{supp_vis1} and~\ref{supp_vis2}. In Figure~\ref{supp_vis1}, we show the explanations of real-world datasets BBBP and MUTAG. Obviously, our proposed method can provide more human-intelligible subgraphs as explanations while PGExplainer and GNNExplainer focus on discrete edges. In addition, we also report the results of sentiment dataset Graph-SST2 in Figure~\ref{supp_vis2}. The results show that our SubgraphX can provide reasonable explanations to explain the predictions. For example, in the second row, the input sentence is ``none of this violates the letter of behan`s book, but missing is its spirit, its ribald, full-throated humor'', whose label is negative and the prediction is correct. From the human's view, ``missing'' should be the keyword for the semantic meaning. Our SubgraphX shows that the ``missing is its spirit'' phrase is important, which successfully captures the keyword. The other methods capture the words and phrases such as ``violates'', ``none of this'', which are less related to the negative meaning.
+
+
+
+\section{Explanations for Node Classification Models}\label{sup:nc}
+In this section, we report more visualizations of explanations for node classification models. The results are reported in Figure~\ref{supp_vis3} where we show the explanations of node classification dataset BA-Shape. Obviously, our SubgprahX focuses on the whole motifs for correct predictions and captures partial motifs for incorrect predictions. This is reasonable since if the model can capture the whole motif, then it is expected to correctly predict the target node; otherwise, the information of partial motifs is not enough to make correct predictions.  
+
+
+
+
+
+
+
+
+%Low2high will arranges the the nodes $n_i$ in order from low degree to high degree. Then we only select the actions which delete the $top\_k$ low degree nodes, where $k$ is a hyper-parameter called expand\_nodes. Meanwhile, high2low will arrange the nodes in order from high degree to low degree. Then we only select the actions which delete the $top\_k$ low degree nodes. 
+
+% For the MCTS, we have to build the MCTS with the original states. For a graph $G_i$ , We build a search tree which the root is associated with the input graph and each of other nodes correspends to a connected subgraph.
+
+% From the root tree node $\mathcal{N}_0$, we expand all the children for the parent tree node through . In order to find the next expand node, MCTS will expand all the children nodes.
+
+% Searching all the states is time-consuming and redundant. Taking advantage of the heuristic searching method, MCTS, we can cut a lot of searching space. However, in the MCTS algorithm, we have to expand all the subgraph when we are trying to find the subgraphs. we can change the spaces with the futher more states. In each state, the MCTS will expand all the leaves and decide which one to expand next. In order to cut the Due to the properties of the graph dataset that the key motifs usually contains high degree or low degree nodes, we employ two methods to expand the tree nodes, high2low and low2high. 
+
+% 
+
+% 
+
+%For the graph classification task, we apply the high2low pruning method with 12 atoms to expand. Meanwhile, for the node classification task on BA-shape(GCNs), we use the high2low method. 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\end{document}
+
+
+% This document was modified from the file originally made available by
+% Pat Langley and Andrea Danyluk for ICML-2K. This version was created
+% by Iain Murray in 2018, and modified by Alexandre Bouchard in
+% 2019 and 2021. Previous contributors include Dan Roy, Lise Getoor and Tobias
+% Scheffer, which was slightly modified from the 2010 version by
+% Thorsten Joachims & Johannes Fuernkranz, slightly modified from the
+% 2009 version by Kiri Wagstaff and Sam Roweis's 2008 version, which is
+% slightly modified from Prasad Tadepalli's 2007 version which is a
+% lightly changed version of the previous year's version by Andrew
+% Moore, which was in turn edited from those of Kristian Kersting and
+% Codrina Lauth. Alex Smola contributed to the algorithmic style files.

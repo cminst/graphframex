@@ -588,10 +588,12 @@ class SubgraphX(object):
         if not self.explain_graph:
             masked_node_list = list(map(self.mapping_inv.get, masked_node_list))
         row, col = self.ori_data.edge_index
-        node_mask = torch.zeros(self.ori_data.x.shape[0])
+        node_mask = torch.zeros(
+            self.ori_data.x.shape[0], device=self.ori_data.edge_index.device
+        )
         node_mask[masked_node_list] = 1.0
         edge_mask = (node_mask[row] == 1) & (node_mask[col] == 1)
-        edge_mask = edge_mask.detach().numpy()
+        edge_mask = edge_mask.detach().cpu().numpy()
         return edge_mask.astype(int)
 
     def __call__(
